@@ -10,7 +10,10 @@
            (com.openai.core JsonValue)
            (com.openai.core.http StreamResponse)
            (java.time Duration)
-           (com.openai.models Reasoning
+           (com.openai.models ComparisonFilter
+                              ComparisonFilter$Builder
+                              ComparisonFilter$Type
+                              Reasoning
                               Reasoning$Builder
                               ReasoningEffort
                               ResponsesModel)
@@ -21,11 +24,17 @@
                                          EasyInputMessage$Role
                                          FileSearchTool
                                          FileSearchTool$Builder
+                                         FileSearchTool$Filters
+                                         FileSearchTool$RankingOptions
+                                         FileSearchTool$RankingOptions$Builder
+                                         FileSearchTool$RankingOptions$Ranker
                                          FunctionTool
                                          FunctionTool$Builder
                                          FunctionTool$Parameters
                                          FunctionTool$Parameters$Builder
                                          Response
+                                         Response$IncompleteDetails
+                                         Response$IncompleteDetails$Reason
                                          ResponseCreateParams
                                          ResponseCreateParams$Builder
                                          ResponseCreateParams$Input
@@ -54,20 +63,37 @@
                                          ResponseInputImage
                                          ResponseInputImage$Builder
                                          ResponseInputImage$Detail
+                                         ResponseInputMessageItem
+                                         ResponseInputMessageItem$Status
                                          ResponseInputItem
                                          ResponseInputItem$FunctionCallOutput
                                          ResponseInputItem$FunctionCallOutput$Builder
                                          ResponseInputText
                                          ResponseInputText$Builder
+                                         ResponseItem
                                          ResponseOutputItemAddedEvent
                                          ResponseOutputItemDoneEvent
                                          ResponseOutputItem
+                                         ResponseOutputItem$ImageGenerationCall
+                                         ResponseOutputItem$LocalShellCall
+                                         ResponseOutputItem$McpApprovalRequest
+                                         ResponseOutputItem$McpCall
+                                         ResponseOutputItem$McpCall$Status
+                                         ResponseOutputItem$McpListTools
                                          ResponseOutputMessage
                                          ResponseOutputMessage$Content
                                          ResponseOutputRefusal
                                          ResponseOutputText
+                                         ResponseOutputText$Annotation
+                                         ResponseOutputText$Annotation$ContainerFileCitation
+                                         ResponseOutputText$Annotation$FileCitation
+                                         ResponseOutputText$Annotation$FilePath
+                                         ResponseOutputText$Annotation$UrlCitation
+                                         ResponseOutputText$Logprob
+                                         ResponseOutputText$Logprob$TopLogprob
                                          ResponseReasoningItem
                                          ResponseReasoningItem$Status
+                                         ResponseReasoningItem$Summary
                                          ResponseReasoningTextDeltaEvent
                                          ResponseReasoningTextDoneEvent
                                          ResponseRefusalDeltaEvent
@@ -84,13 +110,31 @@
                                          Tool$CodeInterpreter$Builder
                                          Tool$CodeInterpreter$Container$CodeInterpreterToolAuto
                                          Tool$CodeInterpreter$Container$CodeInterpreterToolAuto$Builder
+                                         Tool$Mcp
+                                         Tool$Mcp$Builder
+                                         Tool$Mcp$Headers
+                                         Tool$Mcp$Headers$Builder
+                                         Tool$Mcp$RequireApproval$McpToolApprovalSetting
                                          ToolChoiceFunction
                                          ToolChoiceFunction$Builder
                                          ToolChoiceOptions
                                          WebSearchTool
+                                         WebSearchTool$Builder
+                                         WebSearchTool$Filters
+                                         WebSearchTool$Filters$Builder
+                                         WebSearchTool$SearchContextSize
+                                         WebSearchTool$UserLocation
+                                         WebSearchTool$UserLocation$Builder
                                          WebSearchTool$Type)
+           (com.openai.models.responses.inputitems InputItemListPage)
+           (com.openai.models.responses.inputtokens InputTokenCountParams
+                                                      InputTokenCountParams$Builder
+                                                      InputTokenCountParams$Truncation
+                                                      InputTokenCountResponse)
            (com.openai.services.blocking ModelService
-                                         ResponseService)))
+                                         ResponseService)
+           (com.openai.services.blocking.responses InputItemService
+                                                    InputTokenService)))
 
 (set! *warn-on-reflection* true)
 
@@ -204,6 +248,11 @@
         (map (fn [[k v]] [k (JsonValue/from v)]))
         (walk/stringify-keys m)))
 
+(defn- ->json-value-properties [m]
+  (into {}
+        (map (fn [[k v]] [k (JsonValue/from v)]))
+        (walk/stringify-keys m)))
+
 (defn- ->json-schema-format ^ResponseTextConfig [{:keys [name schema strict description]}]
   (when-not name (missing-key! :name))
   (when-not schema (missing-key! :schema))
@@ -239,42 +288,114 @@
                     (.build ab))))
     (.build b)))
 
-(defn- ->file-search-tool ^FileSearchTool [{:keys [vector-store-ids]}]
+(defn- ->web-search-filters ^WebSearchTool$Filters [{:keys [allowed-domains]}]
+  (let [^WebSearchTool$Filters$Builder b (WebSearchTool$Filters/builder)]
+    (when (seq allowed-domains)
+      (.allowedDomains b ^java.util.List (vec allowed-domains)))
+    (.build b)))
+
+(defn- ->web-search-user-location ^WebSearchTool$UserLocation
+  [{:keys [city country region timezone]}]
+  (let [^WebSearchTool$UserLocation$Builder b (WebSearchTool$UserLocation/builder)]
+    (when city (.city b ^String city))
+    (when country (.country b ^String country))
+    (when region (.region b ^String region))
+    (when timezone (.timezone b ^String timezone))
+    (.build b)))
+
+(defn- ->web-search-tool ^WebSearchTool
+  [{:keys [search-context-size user-location allowed-domains]}]
+  (let [^WebSearchTool$Builder b (WebSearchTool/builder)]
+    (.type b WebSearchTool$Type/WEB_SEARCH)
+    (when search-context-size
+      (.searchContextSize b (WebSearchTool$SearchContextSize/of (name search-context-size))))
+    (when user-location (.userLocation b (->web-search-user-location user-location)))
+    (when (seq allowed-domains) (.filters b (->web-search-filters {:allowed-domains allowed-domains})))
+    (.build b)))
+
+(defn- ->comparison-filter ^ComparisonFilter [{:keys [type key value]}]
+  (let [^ComparisonFilter$Builder b (ComparisonFilter/builder)]
+    (when-not type (missing-key! :type))
+    (when-not key (missing-key! :key))
+    (.type b (ComparisonFilter$Type/of (name type)))
+    (.key b ^String key)
+    (cond
+      (string? value) (.value b ^String value)
+      (number? value) (.value b (double value))
+      (instance? Boolean value) (.value b (boolean value))
+      :else (.value b ^String (str value)))
+    (.build b)))
+
+(defn- ->file-search-filters ^FileSearchTool$Filters [filters]
+  (FileSearchTool$Filters/ofComparisonFilter (->comparison-filter filters)))
+
+(defn- ->ranking-options ^FileSearchTool$RankingOptions [{:keys [ranker score-threshold]}]
+  (let [^FileSearchTool$RankingOptions$Builder b (FileSearchTool$RankingOptions/builder)]
+    (when ranker (.ranker b (FileSearchTool$RankingOptions$Ranker/of (str ranker))))
+    (when (some? score-threshold) (.scoreThreshold b (double score-threshold)))
+    (.build b)))
+
+(defn- ->file-search-tool ^FileSearchTool
+  [{:keys [vector-store-ids max-num-results filters ranking-options]}]
   (let [^FileSearchTool$Builder b (FileSearchTool/builder)]
     (when-not (seq vector-store-ids) (missing-key! :vector-store-ids))
     (.vectorStoreIds b ^java.util.List (vec vector-store-ids))
+    (when max-num-results (.maxNumResults b (long max-num-results)))
+    (when filters (.filters b (->file-search-filters filters)))
+    (when ranking-options (.rankingOptions b (->ranking-options ranking-options)))
+    (.build b)))
+
+(defn- ->mcp-headers ^Tool$Mcp$Headers [headers]
+  (let [^Tool$Mcp$Headers$Builder b (Tool$Mcp$Headers/builder)]
+    (.additionalProperties b ^java.util.Map (->json-value-properties headers))
+    (.build b)))
+
+(defn- ->mcp-tool ^Tool$Mcp
+  [{:keys [server-label server-url allowed-tools require-approval headers]}]
+  (let [^Tool$Mcp$Builder b (Tool$Mcp/builder)]
+    (when-not server-label (missing-key! :server-label))
+    (.serverLabel b ^String server-label)
+    (when server-url (.serverUrl b ^String server-url))
+    (when (seq allowed-tools) (.allowedToolsOfMcp b ^java.util.List (vec allowed-tools)))
+    (when require-approval
+      (.requireApproval b (Tool$Mcp$RequireApproval$McpToolApprovalSetting/of (name require-approval))))
+    (when headers (.headers b (->mcp-headers headers)))
     (.build b)))
 
 (defn- ->tool ^Tool [{:keys [type] :as tool}]
   (case (keyword type)
     :function (Tool/ofFunction (->function-tool tool))
-    :web-search (Tool/ofWebSearch (-> (WebSearchTool/builder)
-                                       (.type WebSearchTool$Type/WEB_SEARCH)
-                                       (.build)))
+    :web-search (Tool/ofWebSearch (->web-search-tool tool))
     :file-search (Tool/ofFileSearch (->file-search-tool tool))
+    :mcp (Tool/ofMcp (->mcp-tool tool))
     :code-interpreter (Tool/ofCodeInterpreter (->code-interpreter tool))
     (throw (ex-info (str "Unknown tool type " type)
                     {:openai/error :unknown-tool-type :type type}))))
+
+(defn- ->tool-choice-function ^ToolChoiceFunction [{:keys [name]}]
+  (let [^ToolChoiceFunction$Builder b (ToolChoiceFunction/builder)]
+    (when-not name (missing-key! :name))
+    (.name b ^String name)
+    (.build b)))
+
+(defn- ->tool-choice-option ^ToolChoiceOptions [choice]
+  (case (keyword choice)
+    :auto ToolChoiceOptions/AUTO
+    :required ToolChoiceOptions/REQUIRED
+    :none ToolChoiceOptions/NONE
+    (throw (ex-info (str "Unknown tool choice " choice)
+                    {:openai/error :unknown-tool-choice
+                     :tool-choice choice}))))
 
 (defn- ->tool-choice ^ResponseCreateParams$ToolChoice [choice]
   (if (map? choice)
     (case (keyword (:type choice))
       :function (ResponseCreateParams$ToolChoice/ofFunction
-                 (let [^ToolChoiceFunction$Builder b (ToolChoiceFunction/builder)]
-                   (when-not (:name choice) (missing-key! :name))
-                   (.name b ^String (:name choice))
-                   (.build b)))
+                 (->tool-choice-function choice))
       (throw (ex-info (str "Unknown tool choice type " (:type choice))
                       {:openai/error :unknown-tool-choice-type
                        :type (:type choice)})))
-    (ResponseCreateParams$ToolChoice/ofOptions
-     (case (keyword choice)
-       :auto ToolChoiceOptions/AUTO
-       :required ToolChoiceOptions/REQUIRED
-       :none ToolChoiceOptions/NONE
-       (throw (ex-info (str "Unknown tool choice " choice)
-                       {:openai/error :unknown-tool-choice
-                        :tool-choice choice}))))))
+    (ResponseCreateParams$ToolChoice/ofOptions (->tool-choice-option choice))))
 
 (defn- ->params ^ResponseCreateParams
   [{:keys [model input instructions max-output-tokens temperature top-p
@@ -311,6 +432,31 @@
     (when json-schema (.text b (->json-schema-format json-schema)))
     (.build b)))
 
+(defn- ->input-token-count-params ^InputTokenCountParams
+  [{:keys [model input instructions previous-response-id reasoning tools tool-choice
+           parallel-tool-calls truncation]}]
+  (let [^InputTokenCountParams$Builder b (InputTokenCountParams/builder)]
+    (when model (.model b ^String model))
+    (when input
+      (if (string? input)
+        (.input b ^String input)
+        (.inputOfResponseInputItems b ^java.util.List (mapv ->input-message input))))
+    (when instructions (.instructions b ^String instructions))
+    (when previous-response-id (.previousResponseId b ^String previous-response-id))
+    (when reasoning (.reasoning b (->reasoning reasoning)))
+    (doseq [t tools] (.addTool b (->tool t)))
+    (when tool-choice
+      (if (map? tool-choice)
+        (case (keyword (:type tool-choice))
+          :function (.toolChoice b (->tool-choice-function tool-choice))
+          (throw (ex-info (str "Unknown tool choice type " (:type tool-choice))
+                          {:openai/error :unknown-tool-choice-type
+                           :type (:type tool-choice)})))
+        (.toolChoice b (->tool-choice-option tool-choice))))
+    (when (some? parallel-tool-calls) (.parallelToolCalls b (boolean parallel-tool-calls)))
+    (when truncation (.truncation b (InputTokenCountParams$Truncation/of (enum-name truncation))))
+    (.build b)))
+
 (defn- ->keyword [s]
   (-> s str str/lower-case (str/replace "_" "-") keyword))
 
@@ -320,10 +466,54 @@
     (catch Exception _
       s)))
 
+(defn- opt-get [o]
+  (when (.isPresent ^java.util.Optional o)
+    (.get ^java.util.Optional o)))
+
+(defn- annotation->map [^ResponseOutputText$Annotation a]
+  (cond
+    (.isUrlCitation a) (let [^ResponseOutputText$Annotation$UrlCitation u (.asUrlCitation a)]
+                         {:type :url-citation
+                          :url (.url u)
+                          :title (.title u)
+                          :start-index (.startIndex u)
+                          :end-index (.endIndex u)})
+    (.isFileCitation a) (let [^ResponseOutputText$Annotation$FileCitation f (.asFileCitation a)]
+                          {:type :file-citation
+                           :file-id (.fileId f)
+                           :filename (.filename f)
+                           :index (.index f)})
+    (.isContainerFileCitation a) (let [^ResponseOutputText$Annotation$ContainerFileCitation f
+                                       (.asContainerFileCitation a)]
+                                   {:type :container-file-citation
+                                    :container-id (.containerId f)
+                                    :file-id (.fileId f)
+                                    :filename (.filename f)
+                                    :start-index (.startIndex f)
+                                    :end-index (.endIndex f)})
+    (.isFilePath a) (let [^ResponseOutputText$Annotation$FilePath f (.asFilePath a)]
+                      {:type :file-path
+                       :file-id (.fileId f)
+                       :index (.index f)})
+    :else {:type :unknown}))
+
+(defn- top-logprob->map [^ResponseOutputText$Logprob$TopLogprob l]
+  {:token (.token l)
+   :bytes (vec (.bytes l))
+   :logprob (.logprob l)})
+
+(defn- logprob->map [^ResponseOutputText$Logprob l]
+  {:token (.token l)
+   :bytes (vec (.bytes l))
+   :logprob (.logprob l)
+   :top-logprobs (mapv top-logprob->map (.topLogprobs l))})
+
 (defn- content->map [^ResponseOutputMessage$Content c]
   (cond
     (.isOutputText c) (let [^ResponseOutputText t (.asOutputText c)]
-                        {:type :text :text (.text t)})
+                        (cond-> {:type :text :text (.text t)}
+                          (seq (.annotations t)) (assoc :annotations (mapv annotation->map (.annotations t)))
+                          (.isPresent (.logprobs t)) (assoc :logprobs (mapv logprob->map (.get (.logprobs t))))))
     (.isRefusal c) (let [^ResponseOutputRefusal r (.asRefusal c)]
                      {:type :refusal :refusal (.refusal r)})
     :else {:type :unknown}))
@@ -342,8 +532,10 @@
     (.isPresent (.id f)) (assoc :id (.get (.id f)))))
 
 (defn- reasoning->map [^ResponseReasoningItem r]
-  (cond-> {:type :reasoning}
-    (.isPresent (.status r)) (assoc :status (->keyword (.asString ^ResponseReasoningItem$Status (.get (.status r)))))))
+  (cond-> {:type :reasoning
+           :id (.id r)}
+    (.isPresent (.status r)) (assoc :status (->keyword (.asString ^ResponseReasoningItem$Status (.get (.status r)))))
+    (seq (.summary r)) (assoc :summary (mapv #(.text ^ResponseReasoningItem$Summary %) (.summary r)))))
 
 (defn- web-search-call->map [^ResponseFunctionWebSearch c]
   {:type :web-search-call :status (->keyword (.asString (.status c)))})
@@ -354,6 +546,53 @@
 (defn- code-interpreter-call->map [^com.openai.models.responses.ResponseCodeInterpreterToolCall c]
   {:type :code-interpreter-call :status (->keyword (.asString (.status c)))})
 
+(defn- image-generation-call->map [^ResponseOutputItem$ImageGenerationCall c]
+  (cond-> {:type :image-generation-call
+           :id (.id c)
+           :status (->keyword (.asString (.status c)))}
+    (.isPresent (.result c)) (assoc :result (.get (.result c)))))
+
+(defn- mcp-call->map [^ResponseOutputItem$McpCall c]
+  (cond-> {:type :mcp-call
+           :id (.id c)
+           :name (.name c)
+           :server-label (.serverLabel c)
+    :arguments (.arguments c)}
+    (.isPresent (.status c)) (assoc :status (->keyword (.asString ^ResponseOutputItem$McpCall$Status (.get (.status c)))))
+    (.isPresent (.output c)) (assoc :output (.get (.output c)))
+    (.isPresent (.error c)) (assoc :error (.get (.error c)))))
+
+(defn- mcp-list-tools->map [^ResponseOutputItem$McpListTools c]
+  (cond-> {:type :mcp-list-tools
+           :id (.id c)
+           :server-label (.serverLabel c)}
+    (.isPresent (.error c)) (assoc :error (.get (.error c)))))
+
+(defn- mcp-approval-request->map [^ResponseOutputItem$McpApprovalRequest c]
+  {:type :mcp-approval-request
+   :id (.id c)
+   :name (.name c)
+   :server-label (.serverLabel c)
+   :arguments (.arguments c)})
+
+(defn- custom-tool-call->map [^com.openai.models.responses.ResponseCustomToolCall c]
+  (cond-> {:type :custom-tool-call
+           :name (.name c)
+           :input (.input c)
+           :call-id (.callId c)}
+    (.isPresent (.id c)) (assoc :id (.get (.id c)))))
+
+(defn- local-shell-call->map [^ResponseOutputItem$LocalShellCall c]
+  {:type :local-shell-call
+   :id (.id c)
+   :status (->keyword (.asString (.status c)))
+   :call-id (.callId c)})
+
+(defn- computer-call->map [^com.openai.models.responses.ResponseComputerToolCall c]
+  {:type :computer-call
+   :id (.id c)
+   :status (->keyword (.asString (.status c)))})
+
 (defn- output-item->map [^ResponseOutputItem item]
   (cond
     (.isMessage item) (message->map (.asMessage item))
@@ -362,6 +601,32 @@
     (.isWebSearchCall item) (web-search-call->map (.asWebSearchCall item))
     (.isFileSearchCall item) (file-search-call->map (.asFileSearchCall item))
     (.isCodeInterpreterCall item) (code-interpreter-call->map (.asCodeInterpreterCall item))
+    (.isImageGenerationCall item) (image-generation-call->map (.asImageGenerationCall item))
+    (.isMcpCall item) (mcp-call->map (.asMcpCall item))
+    (.isMcpListTools item) (mcp-list-tools->map (.asMcpListTools item))
+    (.isMcpApprovalRequest item) (mcp-approval-request->map (.asMcpApprovalRequest item))
+    (.isCustomToolCall item) (custom-tool-call->map (.asCustomToolCall item))
+    (.isLocalShellCall item) (local-shell-call->map (.asLocalShellCall item))
+    (.isComputerCall item) (computer-call->map (.asComputerCall item))
+    :else {:type :unknown}))
+
+(defn- input-message-item->map [^ResponseInputMessageItem m]
+  (cond-> {:type :message
+           :role (->keyword (.asString (.role m)))
+           :id (.id m)}
+    (.isPresent (.status m)) (assoc :status (->keyword (.asString ^com.openai.models.responses.ResponseInputMessageItem$Status (.get (.status m)))))))
+
+(defn- response-item->map [^ResponseItem item]
+  (cond
+    (.isResponseInputMessageItem item) (input-message-item->map (.asResponseInputMessageItem item))
+    (.isResponseOutputMessage item) (message->map (.asResponseOutputMessage item))
+    (.isFunctionCall item) (function-call->map (.toResponseFunctionToolCall (.asFunctionCall item)))
+    (.isFunctionCallOutput item) (let [c (.asFunctionCallOutput item)]
+                                   {:type :function-call-output
+                                    :id (.id c)
+                                    :call-id (.callId c)
+                                    :status (->keyword (.asString (.status c)))
+                                    :output (str (.output c))})
     :else {:type :unknown}))
 
 (defn- usage->map [^ResponseUsage u]
@@ -372,6 +637,10 @@
 (defn- error->map [^ResponseError e]
   {:code (->keyword (.asString (.code e)))
    :message (.message e)})
+
+(defn- incomplete-details->map [^Response$IncompleteDetails d]
+  (cond-> {}
+    (.isPresent (.reason d)) (assoc :reason (->keyword (.asString ^com.openai.models.responses.Response$IncompleteDetails$Reason (.get (.reason d)))))))
 
 (defn- output-text [items]
   (apply str
@@ -391,7 +660,7 @@
       (.isPresent (.status r)) (assoc :status (->keyword (.asString ^ResponseStatus (.get (.status r)))))
       (.isPresent (.usage r)) (assoc :usage (usage->map (.get (.usage r))))
       (.isPresent (.error r)) (assoc :error (error->map (.get (.error r))))
-      (.isPresent (.incompleteDetails r)) (assoc :incomplete-details {})
+      (.isPresent (.incompleteDetails r)) (assoc :incomplete-details (incomplete-details->map (.get (.incompleteDetails r))))
       (.isPresent (.previousResponseId r)) (assoc :previous-response-id (.get (.previousResponseId r))))))
 
 (defn create-response
@@ -426,6 +695,16 @@
   `:unknown`."
   [^OpenAIClient client req]
   (response->map (.create (.responses client) (->params req))))
+
+(defn count-input-tokens
+  "Count input tokens for a Responses request shape. Accepts the same request map
+  style as `create-response`; fields unsupported by the SDK's input token count
+  endpoint are ignored. Returns `{:input-tokens n}`."
+  [^OpenAIClient client req]
+  (let [^ResponseService svc (.responses client)
+        ^InputTokenService tokens (.inputTokens svc)
+        ^InputTokenCountResponse r (.count tokens (->input-token-count-params req))]
+    {:input-tokens (.inputTokens r)}))
 
 (defn- model->map [^Model m]
   {:id (.id m)
@@ -508,6 +787,16 @@
                       (.isPresent code) (assoc :code (.get code))))
     :else {:type :other}))
 
+(defn- drain-stream
+  ^String [^StreamResponse sr on-event]
+  (let [sb (StringBuilder.)]
+    (doseq [ev (iterator-seq (.iterator (.stream sr)))]
+      (let [m (event->map ev)]
+        (when (= :output-text-delta (:type m))
+          (.append sb ^String (:delta m)))
+        (when on-event (on-event m))))
+    (str sb)))
+
 (defn stream
   "Stream a Responses API request, invoking `on-event` with a normalized event
   map for every server-sent event as it arrives, and returning the concatenated
@@ -516,13 +805,15 @@
   ^String [^OpenAIClient client req on-event]
   (let [^ResponseService svc (.responses client)]
     (with-open [^StreamResponse sr (.createStreaming svc (->params req))]
-      (let [sb (StringBuilder.)]
-        (doseq [ev (iterator-seq (.iterator (.stream sr)))]
-          (let [m (event->map ev)]
-            (when (= :output-text-delta (:type m))
-              (.append sb ^String (:delta m)))
-            (when on-event (on-event m))))
-        (str sb)))))
+      (drain-stream sr on-event))))
+
+(defn retrieve-streaming
+  "Resume streaming an existing background response id. Invokes `on-event` with
+  normalized event maps and returns concatenated output text, matching `stream`."
+  ^String [^OpenAIClient client ^String response-id on-event]
+  (let [^ResponseService svc (.responses client)]
+    (with-open [^StreamResponse sr (.retrieveStreaming svc response-id)]
+      (drain-stream sr on-event))))
 
 (defn stream-text
   "Stream a Responses API request, calling `on-text` with each output text delta
@@ -537,6 +828,15 @@
   (let [^ResponseService svc (.responses client)]
     (response->map (.retrieve svc response-id))))
 
+(defn list-input-items
+  "List input items for a stored response id as normalized maps. Pages are
+  followed automatically."
+  [^OpenAIClient client ^String response-id]
+  (let [^ResponseService svc (.responses client)
+        ^InputItemService items (.inputItems svc)
+        ^InputItemListPage p (.list items response-id)]
+    (mapv response-item->map (.autoPager p))))
+
 (defn delete-response
   "Delete one stored response by id. The OpenAI Java SDK returns void."
   [^OpenAIClient client ^String response-id]
@@ -549,3 +849,20 @@
   [^OpenAIClient client ^String response-id]
   (let [^ResponseService svc (.responses client)]
     (response->map (.cancel svc response-id))))
+
+(defn- compacted-response->map [^com.openai.models.responses.CompactedResponse r]
+  (let [items (mapv output-item->map (.output r))]
+    {:id (.id r)
+     :output items
+     :text (output-text items)
+     :usage (usage->map (.usage r))
+     :created-at (.createdAt r)}))
+
+(defn compact
+  "Compact a previous response by id and return the compacted response map."
+  [^OpenAIClient client ^String response-id]
+  (let [^ResponseService svc (.responses client)]
+    (compacted-response->map
+     (.compact svc (-> (com.openai.models.responses.ResponseCompactParams/builder)
+                       (.previousResponseId response-id)
+                       (.build))))))

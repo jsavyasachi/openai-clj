@@ -17,13 +17,13 @@ Responses API.
 deps.edn:
 
 ```clojure
-net.clojars.savya/openai-clj {:mvn/version "0.1.0"}
+net.clojars.savya/openai-clj {:mvn/version "0.2.0"}
 ```
 
 Leiningen:
 
 ```clojure
-[net.clojars.savya/openai-clj "0.1.0"]
+[net.clojars.savya/openai-clj "0.2.0"]
 ```
 
 Tracks [`com.openai/openai-java` 4.41.0](https://github.com/openai/openai-java/releases/tag/v4.41.0).
@@ -35,10 +35,25 @@ Tracks [`com.openai/openai-java` 4.41.0](https://github.com/openai/openai-java/r
 
 (def client (openai/client)) ; reads OPENAI_API_KEY
 
+(def configured-client
+  (openai/client {:api-key "sk-..."
+                  :organization "org_..."
+                  :project "proj_..."
+                  :base-url "https://api.openai.com/v1"
+                  :timeout-ms 60000
+                  :max-retries 2}))
+
 (openai/create-response
  client
  {:model "gpt-5.2"
-  :input "Write one sentence about Clojure maps."})
+  :input "Write one sentence about Clojure maps."
+  :instructions "Be precise."
+  :max-output-tokens 256
+  :temperature 0.2
+  :top-p 1.0
+  :metadata {:app "docs"}
+  :store true
+  :reasoning {:effort :low}})
 ;; => {:id "resp_..."
 ;;     :model "gpt-5.2"
 ;;     :status :completed
@@ -49,6 +64,41 @@ Tracks [`com.openai/openai-java` 4.41.0](https://github.com/openai/openai-java/r
 ;;     :text "Clojure maps are ..."
 ;;     :usage {:input-tokens 14 :output-tokens 12 :total-tokens 26}
 ;;     :created-at 1790000000.0}
+```
+
+Request maps support `:model`, `:input`, `:instructions`,
+`:max-output-tokens`, `:max-tool-calls`, `:temperature`, `:top-p`,
+`:top-logprobs`, `:metadata`, `:previous-response-id`, `:store`, `:user`,
+`:reasoning`, `:tools`, `:tool-choice`, `:parallel-tool-calls`, `:background`,
+`:include`, `:truncation`, `:prompt-cache-key`, `:safety-identifier`,
+`:service-tier`, and `:json-schema`.
+
+Input can be a string or a vector of message items. Message content can be a
+string or a vector of multimodal parts:
+
+```clojure
+{:model "gpt-5.2"
+ :input [{:role :user
+          :content [{:type :text :text "Summarize this image."}
+                    {:type :image
+                     :image-url "https://example.test/chart.png"
+                     :detail :high}
+                    {:type :file
+                     :filename "notes.pdf"
+                     :file-data "data:application/pdf;base64,..."}]}]}
+```
+
+Structured outputs use `:json-schema`:
+
+```clojure
+{:model "gpt-5.2"
+ :input "Return an answer object."
+ :json-schema {:name "answer"
+               :description "One answer"
+               :strict true
+               :schema {:type "object"
+                        :properties {:answer {:type "string"}}
+                        :required ["answer"]}}}
 ```
 
 ### Function Tools
@@ -85,6 +135,34 @@ Tracks [`com.openai/openai-java` 4.41.0](https://github.com/openai/openai-java/r
            :output {:temperature_f 72 :conditions "sunny"}}]})
 ```
 
+### Built-In Tools
+
+```clojure
+{:tools [{:type :web-search
+          :search-context-size :low
+          :user-location {:city "Denver"
+                          :country "US"
+                          :region "CO"
+                          :timezone "America/Denver"}
+          :allowed-domains ["example.com"]}
+         {:type :file-search
+          :vector-store-ids ["vs_123"]
+          :max-num-results 5
+          :filters {:type "eq" :key "kind" :value "docs"}
+          :ranking-options {:ranker "auto" :score-threshold 0.5}}
+         {:type :code-interpreter}
+         {:type :code-interpreter :container "cntr_123"}
+         {:type :mcp
+          :server-label "docs"
+          :server-url "https://mcp.example.test"
+          :allowed-tools ["search"]
+          :require-approval :never
+          :headers {"X-Trace" "1"}}]}
+```
+
+Tool choice accepts `:auto`, `:required`, `:none`, or
+`{:type :function :name "get_weather"}`.
+
 ### Streaming
 
 ```clojure
@@ -99,6 +177,9 @@ Tracks [`com.openai/openai-java` 4.41.0](https://github.com/openai/openai-java/r
  {:model "gpt-5.2" :input "Count to three."}
  print)
 ;; prints text deltas and returns the concatenated output text
+
+(openai/retrieve-streaming client "resp_123" prn)
+;; resumes streaming an existing background response
 ```
 
 ### Models And Response Lifecycle
@@ -107,14 +188,44 @@ Tracks [`com.openai/openai-java` 4.41.0](https://github.com/openai/openai-java/r
 (openai/list-models client)
 (openai/get-model client "gpt-5.2")
 (openai/get-response client "resp_123")
+(openai/list-input-items client "resp_123")
+(openai/count-input-tokens client {:model "gpt-5.2" :input "Count me."})
+(openai/compact client "resp_123")
 (openai/cancel-response client "resp_123")
 (openai/delete-response client "resp_123")
 ```
 
+### Response Maps
+
+Output messages include text/refusal content. Text content includes
+`:annotations` when the SDK returns URL, file, container-file, or file-path
+citations, and `:logprobs` when requested and returned. Output item variants
+currently normalized with explicit types:
+`:message`, `:function-call`, `:reasoning`, `:web-search-call`,
+`:file-search-call`, `:code-interpreter-call`, `:image-generation-call`,
+`:mcp-call`, `:mcp-list-tools`, `:mcp-approval-request`,
+`:custom-tool-call`, `:local-shell-call`, `:computer-call`, and `:unknown`.
+
+Incomplete responses include `:incomplete-details`, for example
+`{:reason :max-output-tokens}`.
+
+## Errors
+
+Request-shaping errors thrown by this wrapper are `clojure.lang.ExceptionInfo`
+with `:openai/error` in `ex-data`.
+
+API and transport failures are not wrapped. They surface as the OpenAI Java
+SDK's own exceptions under `com.openai.errors`, rooted at
+`com.openai.errors.OpenAIException`.
+
 ## Scope
 
-This wraps the Responses API and models; chat completions, embeddings, images,
-audio, realtime, and batches are out of scope for now.
+In scope: Responses API, structured outputs, multimodal input parts, response
+streaming, response lifecycle subservices, response compaction, token counting,
+built-in Responses tools, MCP tools, client options, and models.
+
+Out of scope: chat completions, embeddings, images API, audio, realtime, and
+batches.
 
 ## Running tests
 

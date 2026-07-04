@@ -5,6 +5,8 @@
            (com.openai.models.models Model)
            (com.openai.models.responses ResponseCreateParams
                                         ResponseCreateParams$ToolChoice
+                                        Response$IncompleteDetails
+                                        Response$IncompleteDetails$Reason
                                         ResponseCompletedEvent
                                         ResponseCreatedEvent
                                         ResponseErrorEvent
@@ -19,13 +21,32 @@
                                         ResponseOutputItemAddedEvent
                                         ResponseOutputItemDoneEvent
                                         ResponseOutputItem
+                                        ResponseOutputItem$McpCall
+                                        ResponseOutputItem$McpCall$Status
+                                        ResponseOutputItem$McpListTools
+                                        ResponseOutputItem$McpApprovalRequest
                                         ResponseOutputItem$ImageGenerationCall
                                         ResponseOutputItem$ImageGenerationCall$Status
+                                        ResponseOutputItem$LocalShellCall
+                                        ResponseOutputItem$LocalShellCall$Action
+                                        ResponseOutputItem$LocalShellCall$Action$Env
+                                        ResponseOutputItem$LocalShellCall$Status
                                         ResponseOutputMessage
                                         ResponseOutputMessage$Content
                                         ResponseOutputMessage$Status
                                         ResponseOutputRefusal
                                         ResponseOutputText
+                                        ResponseOutputText$Annotation
+                                        ResponseOutputText$Annotation$UrlCitation
+                                        ResponseOutputText$Logprob
+                                        ResponseOutputText$Logprob$TopLogprob
+                                        ResponseReasoningItem
+                                        ResponseReasoningItem$Status
+                                        ResponseReasoningItem$Summary
+                                        ResponseCustomToolCall
+                                        ResponseComputerToolCall
+                                        ResponseComputerToolCall$Status
+                                        ResponseComputerToolCall$Type
                                         ResponseReasoningTextDeltaEvent
                                         ResponseReasoningTextDoneEvent
                                         ResponseRefusalDeltaEvent
@@ -50,6 +71,9 @@
 
 (defn- model->map [m]
   (#'openai/model->map m))
+
+(defn- input-token-count-params [m]
+  (#'openai/->input-token-count-params m))
 
 (defn- opt [o]
   (when (.isPresent ^java.util.Optional o)
@@ -190,15 +214,51 @@
   (testing "web search tool"
     (let [t (first (opt (.tools (params {:model "gpt-5.2"
                                          :input "hi"
-                                         :tools [{:type :web-search}]}))))]
-      (is (.isWebSearch t))))
+                                         :tools [{:type :web-search
+                                                  :search-context-size :high
+                                                  :user-location {:city "Denver"
+                                                                  :country "US"
+                                                                  :region "CO"
+                                                                  :timezone "America/Denver"}
+                                                  :allowed-domains ["example.com"]}]}))))]
+      (is (.isWebSearch t))
+      (is (= "high" (.asString (opt (.searchContextSize (.asWebSearch t))))))
+      (is (= "Denver" (opt (.city (opt (.userLocation (.asWebSearch t)))))))
+      (is (= ["example.com"]
+             (vec (opt (.allowedDomains (opt (.filters (.asWebSearch t))))))))))
   (testing "file search tool"
     (let [t (first (opt (.tools (params {:model "gpt-5.2"
                                          :input "hi"
                                          :tools [{:type :file-search
-                                                  :vector-store-ids ["vs_1"]}]}))))]
+                                                  :vector-store-ids ["vs_1"]
+                                                  :max-num-results 5
+                                                  :filters {:type "eq"
+                                                            :key "kind"
+                                                            :value "docs"}
+                                                  :ranking-options {:ranker "auto"
+                                                                    :score-threshold 0.5}}]}))))]
       (is (.isFileSearch t))
-      (is (= ["vs_1"] (vec (.vectorStoreIds (.asFileSearch t)))))))
+      (is (= ["vs_1"] (vec (.vectorStoreIds (.asFileSearch t)))))
+      (is (= 5 (opt (.maxNumResults (.asFileSearch t)))))
+      (is (= "kind" (.key (.asComparisonFilter (opt (.filters (.asFileSearch t)))))))
+      (is (= "auto" (.asString (opt (.ranker (opt (.rankingOptions (.asFileSearch t))))))))
+      (is (= 0.5 (opt (.scoreThreshold (opt (.rankingOptions (.asFileSearch t)))))))))
+  (testing "mcp tool"
+    (let [t (first (opt (.tools (params {:model "gpt-5.2"
+                                         :input "hi"
+                                         :tools [{:type :mcp
+                                                  :server-label "docs"
+                                                  :server-url "https://mcp.example.test"
+                                                  :allowed-tools ["search"]
+                                                  :require-approval :never
+                                                  :headers {"X-Test" "1"}}]}))))
+          m (.asMcp t)]
+      (is (.isMcp t))
+      (is (= "docs" (.serverLabel m)))
+      (is (= "https://mcp.example.test" (opt (.serverUrl m))))
+      (is (= ["search"] (vec (.asMcp (opt (.allowedTools m))))))
+      (is (= "never" (.asString (.asMcpToolApprovalSetting (opt (.requireApproval m))))))
+      (is (= "1" (.asStringOrThrow (get (._additionalProperties (opt (.headers m))) "X-Test"))))))
   (testing "code interpreter defaults to auto container"
     (let [t (first (opt (.tools (params {:model "gpt-5.2"
                                          :input "hi"
@@ -269,6 +329,30 @@
            (ex-data-for #(params {:model "gpt-5.2"
                                   :input "hi"
                                   :json-schema {:name "answer"}}))))))
+
+(deftest translates-input-token-count-params
+  (let [p (input-token-count-params {:model "gpt-5.2"
+                                     :input [{:role :user :content "hi"}]
+                                     :instructions "count this"
+                                     :previous-response-id "resp_123"
+                                     :parallel-tool-calls false
+                                     :reasoning {:effort :low}
+                                     :tools [{:type :web-search}]
+                                     :tool-choice {:type :function
+                                                   :name "get_weather"}
+                                     :truncation :auto
+                                     :max-output-tokens 99
+                                     :metadata {:ignored true}})
+        item (first (.asResponseInputItems (opt (.input p))))]
+    (is (= "gpt-5.2" (opt (.model p))))
+    (is (= "count this" (opt (.instructions p))))
+    (is (= "resp_123" (opt (.previousResponseId p))))
+    (is (false? (opt (.parallelToolCalls p))))
+    (is (= "low" (-> p .reasoning opt .effort opt .asString)))
+    (is (.isWebSearch (first (opt (.tools p)))))
+    (is (= "get_weather" (.name (.asFunction (opt (.toolChoice p))))))
+    (is (= "auto" (.asString (opt (.truncation p)))))
+    (is (.isEasyInputMessage item))))
 
 (deftest translates-function-call-output-input
   (testing "string output"
@@ -342,12 +426,14 @@
                                            :content [{:type :audio
                                                       :text "hi"}]}]}))))))
 
-(defn- text-content [s]
+(defn- text-content
+  ([s] (text-content s []))
+  ([s annotations]
   (ResponseOutputMessage$Content/ofOutputText
    (-> (ResponseOutputText/builder)
        (.text s)
-       (.annotations [])
-       (.build))))
+       (.annotations annotations)
+       (.build)))))
 
 (defn- refusal-content [s]
   (ResponseOutputMessage$Content/ofRefusal
@@ -378,8 +464,82 @@
   (ResponseOutputItem/ofImageGenerationCall
    (-> (ResponseOutputItem$ImageGenerationCall/builder)
        (.id "img_1")
-       (.result "")
+       (.result "base64")
        (.status (ResponseOutputItem$ImageGenerationCall$Status/of "completed"))
+       (.build))))
+
+(defn- url-annotation []
+  (ResponseOutputText$Annotation/ofUrlCitation
+   (-> (ResponseOutputText$Annotation$UrlCitation/builder)
+       (.url "https://example.test")
+       (.title "Example")
+       (.startIndex 0)
+       (.endIndex 5)
+       (.build))))
+
+(defn- logprob []
+  (-> (ResponseOutputText$Logprob/builder)
+      (.token "Hello")
+      (.bytes [72 101 108 108 111])
+      (.logprob -0.1)
+      (.topLogprobs [(-> (ResponseOutputText$Logprob$TopLogprob/builder)
+                         (.token "Hi")
+                         (.bytes [72 105])
+                         (.logprob -0.5)
+                         (.build))])
+      (.build)))
+
+(defn- reasoning-item []
+  (ResponseOutputItem/ofReasoning
+   (-> (ResponseReasoningItem/builder)
+       (.id "rs_1")
+       (.status ResponseReasoningItem$Status/COMPLETED)
+       (.summary [(-> (ResponseReasoningItem$Summary/builder)
+                      (.text "short thought")
+                      (.build))])
+       (.build))))
+
+(defn- mcp-call-item []
+  (ResponseOutputItem/ofMcpCall
+   (-> (ResponseOutputItem$McpCall/builder)
+       (.id "mcp_1")
+       (.name "search")
+       (.serverLabel "docs")
+       (.arguments "{\"q\":\"sdk\"}")
+       (.output "result")
+       (.status ResponseOutputItem$McpCall$Status/COMPLETED)
+       (.build))))
+
+(defn- custom-tool-call-item []
+  (ResponseOutputItem/ofCustomToolCall
+   (-> (ResponseCustomToolCall/builder)
+       (.id "ctc_1")
+       (.callId "call_custom")
+       (.name "lint")
+       (.input "src")
+       (.build))))
+
+(defn- local-shell-call-item []
+  (ResponseOutputItem/ofLocalShellCall
+   (-> (ResponseOutputItem$LocalShellCall/builder)
+       (.id "shell_1")
+       (.action (-> (ResponseOutputItem$LocalShellCall$Action/builder)
+                    (.command ["pwd"])
+                    (.env (-> (ResponseOutputItem$LocalShellCall$Action$Env/builder)
+                              (.build)))
+                    (.build)))
+       (.callId "call_shell")
+       (.status ResponseOutputItem$LocalShellCall$Status/COMPLETED)
+       (.build))))
+
+(defn- computer-call-item []
+  (ResponseOutputItem/ofComputerCall
+   (-> (ResponseComputerToolCall/builder)
+       (.id "comp_1")
+       (.callId "call_comp")
+       (.pendingSafetyChecks [])
+       (.status ResponseComputerToolCall$Status/COMPLETED)
+       (.type ResponseComputerToolCall$Type/COMPUTER_CALL)
        (.build))))
 
 (defn- response [items]
@@ -418,10 +578,24 @@
                   (.build)))
       (.build)))
 
+(defn- incomplete-response [items]
+  (-> (response items)
+      .toBuilder
+      (.status ResponseStatus/INCOMPLETE)
+      (.incompleteDetails (-> (Response$IncompleteDetails/builder)
+                              (.reason Response$IncompleteDetails$Reason/MAX_OUTPUT_TOKENS)
+                              (.build)))
+      (.build)))
+
 (deftest maps-response-to-clojure
   (let [m (response->map (response [(message-item)
                                     (function-call-item "{\"location\":\"Denver\"}")
-                                    (unknown-item)]))]
+                                    (unknown-item)
+                                    (reasoning-item)
+                                    (mcp-call-item)
+                                    (custom-tool-call-item)
+                                    (local-shell-call-item)
+                                    (computer-call-item)]))]
     (is (= "resp_123" (:id m)))
     (is (= "gpt-5.2" (:model m)))
     (is (= :completed (:status m)))
@@ -440,8 +614,75 @@
              :call-id "call_123"
              :id "fc_1"
              :arguments {:location "Denver"}}
-            {:type :unknown}]
+            {:type :image-generation-call
+             :id "img_1"
+             :status :completed
+             :result "base64"}
+            {:type :reasoning
+             :id "rs_1"
+             :status :completed
+             :summary ["short thought"]}
+            {:type :mcp-call
+             :id "mcp_1"
+             :status :completed
+             :name "search"
+             :server-label "docs"
+             :arguments "{\"q\":\"sdk\"}"
+             :output "result"}
+            {:type :custom-tool-call
+             :id "ctc_1"
+             :name "lint"
+             :input "src"
+             :call-id "call_custom"}
+            {:type :local-shell-call
+             :id "shell_1"
+             :status :completed
+             :call-id "call_shell"}
+            {:type :computer-call
+             :id "comp_1"
+             :status :completed}]
            (:output m)))))
+
+(deftest maps-output-text-annotations
+  (let [m (response->map
+           (response [(ResponseOutputItem/ofMessage
+                       (-> (ResponseOutputMessage/builder)
+                           (.id "msg_1")
+                           (.status ResponseOutputMessage$Status/COMPLETED)
+                           (.content [(text-content "Hello" [(url-annotation)])])
+                           (.build)))]))]
+    (is (= [{:type :url-citation
+             :url "https://example.test"
+             :title "Example"
+             :start-index 0
+             :end-index 5}]
+           (-> m :output first :content first :annotations)))))
+
+(deftest maps-output-text-logprobs
+  (let [content (ResponseOutputMessage$Content/ofOutputText
+                 (-> (ResponseOutputText/builder)
+                     (.text "Hello")
+                     (.annotations [])
+                     (.logprobs [(logprob)])
+                     (.build)))
+        item (ResponseOutputItem/ofMessage
+              (-> (ResponseOutputMessage/builder)
+                  (.id "msg_1")
+                  (.status ResponseOutputMessage$Status/COMPLETED)
+                  (.content [content])
+                  (.build)))
+        m (response->map (response [item]))]
+    (is (= [{:token "Hello"
+             :bytes [72 101 108 108 111]
+             :logprob -0.1
+             :top-logprobs [{:token "Hi"
+                             :bytes [72 105]
+                             :logprob -0.5}]}]
+           (-> m :output first :content first :logprobs)))))
+
+(deftest maps-incomplete-details
+  (let [m (response->map (incomplete-response []))]
+    (is (= {:reason :max-output-tokens} (:incomplete-details m)))))
 
 (deftest response-map-keeps-garbage-arguments-raw
   (let [m (response->map (response [(function-call-item "{not json}")]))]
@@ -572,7 +813,10 @@
                (.sequenceNumber 9)
                (.build))))))
   (is (= {:type :output-item-done
-          :item {:type :unknown}
+          :item {:type :image-generation-call
+                 :id "img_1"
+                 :status :completed
+                 :result "base64"}
           :output-index 2}
          (event->map
           (ResponseStreamEvent/ofOutputItemDone
