@@ -17,13 +17,13 @@ Responses API.
 deps.edn:
 
 ```clojure
-net.clojars.savya/openai-clj {:mvn/version "0.3.0"}
+net.clojars.savya/openai-clj {:mvn/version "0.4.0"}
 ```
 
 Leiningen:
 
 ```clojure
-[net.clojars.savya/openai-clj "0.3.0"]
+[net.clojars.savya/openai-clj "0.4.0"]
 ```
 
 Tracks [`com.openai/openai-java` 4.41.0](https://github.com/openai/openai-java/releases/tag/v4.41.0).
@@ -184,6 +184,27 @@ Tool choice accepts `:auto`, `:required`, `:none`, or
 ;; resumes streaming an existing background response
 ```
 
+### Embeddings
+
+```clojure
+(openai/create-embeddings
+ client
+ {:model "text-embedding-3-small"
+  :input ["first text" "second text"]
+  :dimensions 256})
+;; => {:model "text-embedding-3-small"
+;;     :embeddings [[0.01 -0.02 ...] [0.03 0.04 ...]]
+;;     :usage {:prompt-tokens 8 :total-tokens 8}}
+```
+
+### Azure OpenAI
+
+```clojure
+(openai/client {:api-key key
+                :base-url "https://my-resource.openai.azure.com"
+                :azure-service-version "2024-10-21"})
+```
+
 ### Models And Response Lifecycle
 
 ```clojure
@@ -232,7 +253,8 @@ Other SDK exceptions (e.g. `OpenAIInvalidDataException`) propagate unchanged.
 
 In scope: Responses API, structured outputs, multimodal input parts, response
 streaming, response lifecycle subservices, response compaction, token counting,
-built-in Responses tools, MCP tools, client options, and models.
+built-in Responses tools, MCP tools, client options (including Azure OpenAI
+endpoints), embeddings, and models.
 
 Out of scope: chat completions, embeddings, images API, audio, realtime, and
 batches.
