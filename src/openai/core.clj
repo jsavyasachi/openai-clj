@@ -9,6 +9,17 @@
                                       OpenAIOkHttpClient$Builder)
            (com.openai.core JsonValue)
            (com.openai.core.http StreamResponse)
+           (com.openai.errors BadRequestException
+                              InternalServerException
+                              NotFoundException
+                              OpenAIException
+                              OpenAIIoException
+                              OpenAIServiceException
+                              PermissionDeniedException
+                              RateLimitException
+                              UnauthorizedException
+                              UnexpectedStatusCodeException
+                              UnprocessableEntityException)
            (java.time Duration)
            (com.openai.models ComparisonFilter
                               ComparisonFilter$Builder
@@ -43,6 +54,10 @@
                                          ResponseCreateParams$ServiceTier
                                          ResponseCreateParams$ToolChoice
                                          ResponseCreateParams$Truncation
+                                         ResponseCreateParams$StreamOptions
+                                         ResponseCreateParams$StreamOptions$Builder
+                                         ResponseCreateParams$Moderation
+                                         ResponseCreateParams$Moderation$Builder
                                          ResponseCompletedEvent
                                          ResponseError
                                          ResponseErrorEvent
@@ -102,6 +117,7 @@
                                          ResponseStreamEvent
                                          ResponseTextConfig
                                          ResponseTextConfig$Builder
+                                         ResponseTextConfig$Verbosity
                                          ResponseTextDeltaEvent
                                          ResponseTextDoneEvent
                                          ResponseUsage
@@ -153,6 +169,40 @@
      (when timeout-ms (.timeout b (Duration/ofMillis (long timeout-ms))))
      (when max-retries (.maxRetries b (int max-retries)))
      (.build b))))
+
+(defn- service-error-type [e]
+  (condp instance? e
+    BadRequestException :bad-request
+    UnauthorizedException :unauthorized
+    PermissionDeniedException :permission-denied
+    NotFoundException :not-found
+    UnprocessableEntityException :unprocessable-entity
+    RateLimitException :rate-limit
+    InternalServerException :internal-server
+    UnexpectedStatusCodeException :unexpected-status
+    :api-error))
+
+(defn- throw-normalized!
+  "Rethrow an SDK exception: service errors and I/O errors become ex-info
+  keyed `:openai/error` with the original as cause; anything else propagates
+  unchanged."
+  [^Throwable e]
+  (cond
+    (instance? OpenAIServiceException e)
+    (throw (ex-info (or (.getMessage e) "OpenAI API error")
+                    {:openai/error :api-error
+                     :status (.statusCode ^OpenAIServiceException e)
+                     :error-type (service-error-type e)}
+                    e))
+    (instance? OpenAIIoException e)
+    (throw (ex-info (or (.getMessage e) "OpenAI I/O error")
+                    {:openai/error :io-error}
+                    e))
+    :else (throw e)))
+
+(defmacro ^:private with-api-errors [& body]
+  `(try ~@body
+        (catch OpenAIException e# (throw-normalized! e#))))
 
 (defn- missing-key! [k]
   (throw (ex-info (str "Missing required key " k)
@@ -253,21 +303,36 @@
         (map (fn [[k v]] [k (JsonValue/from v)]))
         (walk/stringify-keys m)))
 
-(defn- ->json-schema-format ^ResponseTextConfig [{:keys [name schema strict description]}]
-  (when-not name (missing-key! :name))
-  (when-not schema (missing-key! :schema))
-  (let [^ResponseFormatTextJsonSchemaConfig$Schema$Builder sb
-        (ResponseFormatTextJsonSchemaConfig$Schema/builder)
-        ^ResponseFormatTextJsonSchemaConfig$Builder fb
-        (ResponseFormatTextJsonSchemaConfig/builder)
-        ^ResponseTextConfig$Builder tb (ResponseTextConfig/builder)]
-    (.additionalProperties sb ^java.util.Map (->json-schema-properties schema))
-    (.name fb ^String name)
-    (.schema fb (.build sb))
-    (when description (.description fb ^String description))
-    (when (some? strict) (.strict fb (boolean strict)))
-    (.format tb (.build fb))
+(defn- ->text-config ^ResponseTextConfig [json-schema verbosity]
+  (let [^ResponseTextConfig$Builder tb (ResponseTextConfig/builder)]
+    (when json-schema
+      (let [{:keys [name schema strict description]} json-schema
+            ^ResponseFormatTextJsonSchemaConfig$Schema$Builder sb
+            (ResponseFormatTextJsonSchemaConfig$Schema/builder)
+            ^ResponseFormatTextJsonSchemaConfig$Builder fb
+            (ResponseFormatTextJsonSchemaConfig/builder)]
+        (when-not name (missing-key! :name))
+        (when-not schema (missing-key! :schema))
+        (.additionalProperties sb ^java.util.Map (->json-schema-properties schema))
+        (.name fb ^String name)
+        (.schema fb (.build sb))
+        (when description (.description fb ^String description))
+        (when (some? strict) (.strict fb (boolean strict)))
+        (.format tb (.build fb))))
+    (when verbosity
+      (.verbosity tb (ResponseTextConfig$Verbosity/of (name verbosity))))
     (.build tb)))
+
+(defn- ->stream-options ^ResponseCreateParams$StreamOptions [{:keys [include-obfuscation]}]
+  (let [^ResponseCreateParams$StreamOptions$Builder b (ResponseCreateParams$StreamOptions/builder)]
+    (when (some? include-obfuscation)
+      (.includeObfuscation b (boolean include-obfuscation)))
+    (.build b)))
+
+(defn- ->moderation ^ResponseCreateParams$Moderation [{:keys [model]}]
+  (let [^ResponseCreateParams$Moderation$Builder b (ResponseCreateParams$Moderation/builder)]
+    (when model (.model b ^String model))
+    (.build b)))
 
 (defn- ->function-tool ^FunctionTool [{:keys [name description parameters strict]}]
   (let [^FunctionTool$Builder b (FunctionTool/builder)]
@@ -402,7 +467,7 @@
            metadata previous-response-id store reasoning user tools tool-choice
            parallel-tool-calls background include truncation prompt-cache-key
            safety-identifier service-tier max-tool-calls top-logprobs
-           json-schema]}]
+           json-schema verbosity conversation stream-options moderation]}]
   (when-not model (missing-key! :model))
   (when-not input (missing-key! :input))
   (let [^ResponseCreateParams$Builder b (ResponseCreateParams/builder)]
@@ -429,7 +494,11 @@
     (when tool-choice (.toolChoice b (->tool-choice tool-choice)))
     (when (some? parallel-tool-calls)
       (.parallelToolCalls b (boolean parallel-tool-calls)))
-    (when json-schema (.text b (->json-schema-format json-schema)))
+    (when (or json-schema verbosity)
+      (.text b (->text-config json-schema verbosity)))
+    (when conversation (.conversation b ^String conversation))
+    (when stream-options (.streamOptions b (->stream-options stream-options)))
+    (when moderation (.moderation b (->moderation moderation)))
     (.build b)))
 
 (defn- ->input-token-count-params ^InputTokenCountParams
@@ -671,7 +740,8 @@
   `:previous-response-id`, `:store`, `:reasoning`, `:user`, `:tools`,
   `:tool-choice`, `:parallel-tool-calls`, `:background`, `:include`,
   `:truncation`, `:prompt-cache-key`, `:safety-identifier`, `:service-tier`,
-  `:max-tool-calls`, `:top-logprobs`, and `:json-schema`.
+  `:max-tool-calls`, `:top-logprobs`, `:json-schema`, `:verbosity`,
+  `:conversation`, `:stream-options`, and `:moderation`.
 
   Message-vector input items accept `{:role :system|:developer|:user|:assistant
   :content \"...\"}`, multimodal content vectors containing text, image, or file
@@ -694,17 +764,19 @@
   `:web-search-call`, `:file-search-call`, `:code-interpreter-call`, or
   `:unknown`."
   [^OpenAIClient client req]
-  (response->map (.create (.responses client) (->params req))))
+  (with-api-errors
+    (response->map (.create (.responses client) (->params req)))))
 
 (defn count-input-tokens
   "Count input tokens for a Responses request shape. Accepts the same request map
   style as `create-response`; fields unsupported by the SDK's input token count
   endpoint are ignored. Returns `{:input-tokens n}`."
   [^OpenAIClient client req]
-  (let [^ResponseService svc (.responses client)
-        ^InputTokenService tokens (.inputTokens svc)
-        ^InputTokenCountResponse r (.count tokens (->input-token-count-params req))]
-    {:input-tokens (.inputTokens r)}))
+  (with-api-errors
+    (let [^ResponseService svc (.responses client)
+          ^InputTokenService tokens (.inputTokens svc)
+          ^InputTokenCountResponse r (.count tokens (->input-token-count-params req))]
+      {:input-tokens (.inputTokens r)})))
 
 (defn- model->map [^Model m]
   {:id (.id m)
@@ -715,15 +787,17 @@
   "List available models as a vector of `{:id :created :owned-by}` maps. Pages
   are followed automatically."
   [^OpenAIClient client]
-  (let [^ModelService svc (.models client)
-        ^ModelListPage p (.list svc)]
-    (mapv model->map (.autoPager p))))
+  (with-api-errors
+    (let [^ModelService svc (.models client)
+          ^ModelListPage p (.list svc)]
+      (mapv model->map (.autoPager p)))))
 
 (defn get-model
   "Retrieve one model by id as a `{:id :created :owned-by}` map."
   [^OpenAIClient client ^String model-id]
-  (let [^ModelService svc (.models client)]
-    (model->map (.retrieve svc model-id))))
+  (with-api-errors
+    (let [^ModelService svc (.models client)]
+      (model->map (.retrieve svc model-id)))))
 
 (defn- event->map
   "Normalize one `ResponseStreamEvent` into a Clojure map keyed by `:type`."
@@ -803,17 +877,19 @@
   output text. Takes the same `req` map as `create-response`. The underlying
   HTTP stream is closed automatically."
   ^String [^OpenAIClient client req on-event]
-  (let [^ResponseService svc (.responses client)]
-    (with-open [^StreamResponse sr (.createStreaming svc (->params req))]
-      (drain-stream sr on-event))))
+  (with-api-errors
+    (let [^ResponseService svc (.responses client)]
+      (with-open [^StreamResponse sr (.createStreaming svc (->params req))]
+        (drain-stream sr on-event)))))
 
 (defn retrieve-streaming
   "Resume streaming an existing background response id. Invokes `on-event` with
   normalized event maps and returns concatenated output text, matching `stream`."
   ^String [^OpenAIClient client ^String response-id on-event]
-  (let [^ResponseService svc (.responses client)]
-    (with-open [^StreamResponse sr (.retrieveStreaming svc response-id)]
-      (drain-stream sr on-event))))
+  (with-api-errors
+    (let [^ResponseService svc (.responses client)]
+      (with-open [^StreamResponse sr (.retrieveStreaming svc response-id)]
+        (drain-stream sr on-event)))))
 
 (defn stream-text
   "Stream a Responses API request, calling `on-text` with each output text delta
@@ -825,30 +901,34 @@
 (defn get-response
   "Retrieve one stored response by id as a response map."
   [^OpenAIClient client ^String response-id]
-  (let [^ResponseService svc (.responses client)]
-    (response->map (.retrieve svc response-id))))
+  (with-api-errors
+    (let [^ResponseService svc (.responses client)]
+      (response->map (.retrieve svc response-id)))))
 
 (defn list-input-items
   "List input items for a stored response id as normalized maps. Pages are
   followed automatically."
   [^OpenAIClient client ^String response-id]
-  (let [^ResponseService svc (.responses client)
-        ^InputItemService items (.inputItems svc)
-        ^InputItemListPage p (.list items response-id)]
-    (mapv response-item->map (.autoPager p))))
+  (with-api-errors
+    (let [^ResponseService svc (.responses client)
+          ^InputItemService items (.inputItems svc)
+          ^InputItemListPage p (.list items response-id)]
+      (mapv response-item->map (.autoPager p)))))
 
 (defn delete-response
   "Delete one stored response by id. The OpenAI Java SDK returns void."
   [^OpenAIClient client ^String response-id]
-  (let [^ResponseService svc (.responses client)]
-    (.delete svc response-id))
-  nil)
+  (with-api-errors
+    (let [^ResponseService svc (.responses client)]
+      (.delete svc response-id))
+    nil))
 
 (defn cancel-response
   "Cancel an in-progress response by id and return the resulting response map."
   [^OpenAIClient client ^String response-id]
-  (let [^ResponseService svc (.responses client)]
-    (response->map (.cancel svc response-id))))
+  (with-api-errors
+    (let [^ResponseService svc (.responses client)]
+      (response->map (.cancel svc response-id)))))
 
 (defn- compacted-response->map [^com.openai.models.responses.CompactedResponse r]
   (let [items (mapv output-item->map (.output r))]
@@ -861,8 +941,9 @@
 (defn compact
   "Compact a previous response by id and return the compacted response map."
   [^OpenAIClient client ^String response-id]
-  (let [^ResponseService svc (.responses client)]
-    (compacted-response->map
-     (.compact svc (-> (com.openai.models.responses.ResponseCompactParams/builder)
-                       (.previousResponseId response-id)
-                       (.build))))))
+  (with-api-errors
+    (let [^ResponseService svc (.responses client)]
+      (compacted-response->map
+       (.compact svc (-> (com.openai.models.responses.ResponseCompactParams/builder)
+                         (.previousResponseId response-id)
+                         (.build)))))))

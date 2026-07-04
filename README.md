@@ -17,13 +17,13 @@ Responses API.
 deps.edn:
 
 ```clojure
-net.clojars.savya/openai-clj {:mvn/version "0.2.0"}
+net.clojars.savya/openai-clj {:mvn/version "0.3.0"}
 ```
 
 Leiningen:
 
 ```clojure
-[net.clojars.savya/openai-clj "0.2.0"]
+[net.clojars.savya/openai-clj "0.3.0"]
 ```
 
 Tracks [`com.openai/openai-java` 4.41.0](https://github.com/openai/openai-java/releases/tag/v4.41.0).
@@ -71,7 +71,9 @@ Request maps support `:model`, `:input`, `:instructions`,
 `:top-logprobs`, `:metadata`, `:previous-response-id`, `:store`, `:user`,
 `:reasoning`, `:tools`, `:tool-choice`, `:parallel-tool-calls`, `:background`,
 `:include`, `:truncation`, `:prompt-cache-key`, `:safety-identifier`,
-`:service-tier`, and `:json-schema`.
+`:service-tier`, `:json-schema`, `:verbosity` (`:low`/`:medium`/`:high`),
+`:conversation` (a conversation id string), `:stream-options`
+(`{:include-obfuscation true}`), and `:moderation` (`{:model "..."}`).
 
 Input can be a string or a vector of message items. Message content can be a
 string or a vector of multimodal parts:
@@ -211,12 +213,20 @@ Incomplete responses include `:incomplete-details`, for example
 
 ## Errors
 
-Request-shaping errors thrown by this wrapper are `clojure.lang.ExceptionInfo`
-with `:openai/error` in `ex-data`.
+All failures throw `ex-info` keyed `:openai/error` in `ex-data`:
 
-API and transport failures are not wrapped. They surface as the OpenAI Java
-SDK's own exceptions under `com.openai.errors`, rooted at
-`com.openai.errors.OpenAIException`.
+- Request-shaping errors (bad tool spec, missing key) throw before any network
+  call, with an error keyword describing the problem.
+- API failures carry `{:openai/error :api-error :status <http status>
+  :error-type <kw>}` where `:error-type` is one of `:bad-request`,
+  `:unauthorized`, `:permission-denied`, `:not-found`,
+  `:unprocessable-entity`, `:rate-limit`, `:internal-server`, or
+  `:unexpected-status`. The original SDK exception is preserved as
+  `(ex-cause e)`.
+- Network/IO failures carry `{:openai/error :io-error}`, original exception as
+  cause.
+
+Other SDK exceptions (e.g. `OpenAIInvalidDataException`) propagate unchanged.
 
 ## Scope
 

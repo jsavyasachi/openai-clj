@@ -894,3 +894,48 @@
                (.response (response []))
                (.sequenceNumber 17)
                (.build)))))))
+
+(def throw-normalized! #'openai/throw-normalized!)
+
+(defn- rate-limit-ex []
+  (let [ctor (first (.getConstructors com.openai.errors.RateLimitException))
+        err (-> (com.openai.models.ErrorObject/builder)
+                (.code "rate_limited")
+                (.message "too fast")
+                (.param (java.util.Optional/empty))
+                (.type "rate_limit_error")
+                (.build))]
+    (.newInstance ctor
+                  (object-array [(.build (com.openai.core.http.Headers/builder))
+                                 (com.openai.core.JsonField/of err)
+                                 nil nil]))))
+
+(deftest api-error-normalization
+  (testing "service exceptions become ex-info with status, error-type, cause"
+    (let [orig (rate-limit-ex)
+          ex (try (throw-normalized! orig) (catch clojure.lang.ExceptionInfo e e))]
+      (is (= :api-error (:openai/error (ex-data ex))))
+      (is (= 429 (:status (ex-data ex))))
+      (is (= :rate-limit (:error-type (ex-data ex))))
+      (is (identical? orig (ex-cause ex)))))
+  (testing "io exceptions become :io-error ex-info"
+    (let [orig (com.openai.errors.OpenAIIoException. "boom")
+          ex (try (throw-normalized! orig) (catch clojure.lang.ExceptionInfo e e))]
+      (is (= :io-error (:openai/error (ex-data ex))))
+      (is (identical? orig (ex-cause ex)))))
+  (testing "other OpenAI exceptions pass through unchanged"
+    (let [orig (com.openai.errors.OpenAIInvalidDataException. "bad" nil)
+          ex (try (throw-normalized! orig) (catch Throwable e e))]
+      (is (identical? orig ex)))))
+
+(deftest translates-conversation-stream-options-moderation-verbosity
+  (let [p (params {:model "gpt-5.2"
+                   :input "hi"
+                   :conversation "conv_123"
+                   :stream-options {:include-obfuscation true}
+                   :moderation {:model "omni-moderation-latest"}
+                   :verbosity :low})]
+    (is (= "conv_123" (-> p .conversation opt .asId)))
+    (is (true? (-> p .streamOptions opt .includeObfuscation opt)))
+    (is (= "omni-moderation-latest" (-> p .moderation opt .model)))
+    (is (= "low" (-> p .text opt .verbosity opt str)))))
