@@ -8,10 +8,13 @@
            (com.openai.client.okhttp OpenAIOkHttpClient
                                       OpenAIOkHttpClient$Builder)
            (com.openai.core JsonValue)
+           (com.openai.core.http StreamResponse)
            (com.openai.models Reasoning
                               Reasoning$Builder
                               ReasoningEffort
                               ResponsesModel)
+           (com.openai.models.models Model
+                                      ModelListPage)
            (com.openai.models.responses EasyInputMessage
                                          EasyInputMessage$Builder
                                          EasyInputMessage$Role
@@ -28,12 +31,20 @@
                                          ResponseCreateParams$Metadata
                                          ResponseCreateParams$Metadata$Builder
                                          ResponseCreateParams$ToolChoice
+                                         ResponseCompletedEvent
                                          ResponseError
+                                         ResponseErrorEvent
+                                         ResponseFailedEvent
+                                         ResponseFunctionCallArgumentsDeltaEvent
+                                         ResponseFunctionCallArgumentsDoneEvent
                                          ResponseFunctionToolCall
                                          ResponseFunctionWebSearch
+                                         ResponseIncompleteEvent
                                          ResponseInputItem
                                          ResponseInputItem$FunctionCallOutput
                                          ResponseInputItem$FunctionCallOutput$Builder
+                                         ResponseOutputItemAddedEvent
+                                         ResponseOutputItemDoneEvent
                                          ResponseOutputItem
                                          ResponseOutputMessage
                                          ResponseOutputMessage$Content
@@ -41,7 +52,14 @@
                                          ResponseOutputText
                                          ResponseReasoningItem
                                          ResponseReasoningItem$Status
+                                         ResponseReasoningTextDeltaEvent
+                                         ResponseReasoningTextDoneEvent
+                                         ResponseRefusalDeltaEvent
+                                         ResponseRefusalDoneEvent
                                          ResponseStatus
+                                         ResponseStreamEvent
+                                         ResponseTextDeltaEvent
+                                         ResponseTextDoneEvent
                                          ResponseUsage
                                          Tool
                                          Tool$CodeInterpreter
@@ -52,7 +70,9 @@
                                          ToolChoiceFunction$Builder
                                          ToolChoiceOptions
                                          WebSearchTool
-                                         WebSearchTool$Type)))
+                                         WebSearchTool$Type)
+           (com.openai.services.blocking ModelService
+                                         ResponseService)))
 
 (set! *warn-on-reflection* true)
 
@@ -310,3 +330,126 @@
   `:unknown`."
   [^OpenAIClient client req]
   (response->map (.create (.responses client) (->params req))))
+
+(defn- model->map [^Model m]
+  {:id (.id m)
+   :created (.created m)
+   :owned-by (.ownedBy m)})
+
+(defn list-models
+  "List available models as a vector of `{:id :created :owned-by}` maps. Pages
+  are followed automatically."
+  [^OpenAIClient client]
+  (let [^ModelService svc (.models client)
+        ^ModelListPage p (.list svc)]
+    (mapv model->map (.autoPager p))))
+
+(defn get-model
+  "Retrieve one model by id as a `{:id :created :owned-by}` map."
+  [^OpenAIClient client ^String model-id]
+  (let [^ModelService svc (.models client)]
+    (model->map (.retrieve svc model-id))))
+
+(defn- event->map
+  "Normalize one `ResponseStreamEvent` into a Clojure map keyed by `:type`."
+  [^ResponseStreamEvent ev]
+  (cond
+    (.isOutputTextDelta ev) (let [e ^ResponseTextDeltaEvent (.asOutputTextDelta ev)]
+                              {:type :output-text-delta
+                               :delta (.delta e)
+                               :item-id (.itemId e)
+                               :output-index (.outputIndex e)})
+    (.isOutputTextDone ev) (let [e ^ResponseTextDoneEvent (.asOutputTextDone ev)]
+                             {:type :output-text-done
+                              :text (.text e)
+                              :item-id (.itemId e)
+                              :output-index (.outputIndex e)})
+    (.isFunctionCallArgumentsDelta ev)
+    (let [e ^ResponseFunctionCallArgumentsDeltaEvent (.asFunctionCallArgumentsDelta ev)]
+      {:type :function-call-arguments-delta
+       :delta (.delta e)
+       :item-id (.itemId e)})
+    (.isFunctionCallArgumentsDone ev)
+    (let [e ^ResponseFunctionCallArgumentsDoneEvent (.asFunctionCallArgumentsDone ev)]
+      {:type :function-call-arguments-done
+       :arguments (.arguments e)
+       :item-id (.itemId e)})
+    (.isReasoningTextDelta ev) (let [e ^ResponseReasoningTextDeltaEvent (.asReasoningTextDelta ev)]
+                                 {:type :reasoning-text-delta
+                                  :delta (.delta e)})
+    (.isReasoningTextDone ev) (let [e ^ResponseReasoningTextDoneEvent (.asReasoningTextDone ev)]
+                                {:type :reasoning-text-done
+                                 :text (.text e)})
+    (.isRefusalDelta ev) (let [e ^ResponseRefusalDeltaEvent (.asRefusalDelta ev)]
+                           {:type :refusal-delta
+                            :delta (.delta e)})
+    (.isRefusalDone ev) (let [e ^ResponseRefusalDoneEvent (.asRefusalDone ev)]
+                          {:type :refusal-done
+                           :refusal (.refusal e)})
+    (.isOutputItemAdded ev) (let [e ^ResponseOutputItemAddedEvent (.asOutputItemAdded ev)]
+                              {:type :output-item-added
+                               :item (output-item->map (.item e))
+                               :output-index (.outputIndex e)})
+    (.isOutputItemDone ev) (let [e ^ResponseOutputItemDoneEvent (.asOutputItemDone ev)]
+                             {:type :output-item-done
+                              :item (output-item->map (.item e))
+                              :output-index (.outputIndex e)})
+    (.isCreated ev) {:type :created}
+    (.isInProgress ev) {:type :in-progress}
+    (.isCompleted ev) (let [e ^ResponseCompletedEvent (.asCompleted ev)]
+                        {:type :completed
+                         :response (response->map (.response e))})
+    (.isIncomplete ev) (let [e ^ResponseIncompleteEvent (.asIncomplete ev)]
+                         {:type :incomplete
+                          :response (response->map (.response e))})
+    (.isFailed ev) (let [e ^ResponseFailedEvent (.asFailed ev)]
+                     {:type :failed
+                      :response (response->map (.response e))})
+    (.isError ev) (let [e ^ResponseErrorEvent (.asError ev)
+                        code (.code e)]
+                    (cond-> {:type :error
+                             :message (.message e)}
+                      (.isPresent code) (assoc :code (.get code))))
+    :else {:type :other}))
+
+(defn stream
+  "Stream a Responses API request, invoking `on-event` with a normalized event
+  map for every server-sent event as it arrives, and returning the concatenated
+  output text. Takes the same `req` map as `create-response`. The underlying
+  HTTP stream is closed automatically."
+  ^String [^OpenAIClient client req on-event]
+  (let [^ResponseService svc (.responses client)]
+    (with-open [^StreamResponse sr (.createStreaming svc (->params req))]
+      (let [sb (StringBuilder.)]
+        (doseq [ev (iterator-seq (.iterator (.stream sr)))]
+          (let [m (event->map ev)]
+            (when (= :output-text-delta (:type m))
+              (.append sb ^String (:delta m)))
+            (when on-event (on-event m))))
+        (str sb)))))
+
+(defn stream-text
+  "Stream a Responses API request, calling `on-text` with each output text delta
+  string as it arrives, and returning the full concatenated text."
+  ^String [^OpenAIClient client req on-text]
+  (stream client req
+          (fn [m] (when (and on-text (= :output-text-delta (:type m))) (on-text (:delta m))))))
+
+(defn get-response
+  "Retrieve one stored response by id as a response map."
+  [^OpenAIClient client ^String response-id]
+  (let [^ResponseService svc (.responses client)]
+    (response->map (.retrieve svc response-id))))
+
+(defn delete-response
+  "Delete one stored response by id. The OpenAI Java SDK returns void."
+  [^OpenAIClient client ^String response-id]
+  (let [^ResponseService svc (.responses client)]
+    (.delete svc response-id))
+  nil)
+
+(defn cancel-response
+  "Cancel an in-progress response by id and return the resulting response map."
+  [^OpenAIClient client ^String response-id]
+  (let [^ResponseService svc (.responses client)]
+    (response->map (.cancel svc response-id))))

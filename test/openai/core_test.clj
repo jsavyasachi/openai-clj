@@ -2,10 +2,21 @@
   (:require [clojure.test :refer [deftest is testing]]
             [openai.core :as openai])
   (:import (com.openai.client OpenAIClient)
+           (com.openai.models.models Model)
            (com.openai.models.responses ResponseCreateParams
                                         ResponseCreateParams$ToolChoice
+                                        ResponseCompletedEvent
+                                        ResponseCreatedEvent
+                                        ResponseErrorEvent
+                                        ResponseFailedEvent
                                         ResponseFunctionToolCall
+                                        ResponseFunctionCallArgumentsDeltaEvent
+                                        ResponseFunctionCallArgumentsDoneEvent
+                                        ResponseIncompleteEvent
+                                        ResponseInProgressEvent
                                         ResponseInputItem
+                                        ResponseOutputItemAddedEvent
+                                        ResponseOutputItemDoneEvent
                                         ResponseOutputItem
                                         ResponseOutputItem$ImageGenerationCall
                                         ResponseOutputItem$ImageGenerationCall$Status
@@ -14,7 +25,14 @@
                                         ResponseOutputMessage$Status
                                         ResponseOutputRefusal
                                         ResponseOutputText
+                                        ResponseReasoningTextDeltaEvent
+                                        ResponseReasoningTextDoneEvent
+                                        ResponseRefusalDeltaEvent
+                                        ResponseRefusalDoneEvent
                                         ResponseStatus
+                                        ResponseStreamEvent
+                                        ResponseTextDeltaEvent
+                                        ResponseTextDoneEvent
                                         ResponseUsage
                                         ResponseUsage$InputTokensDetails
                                         ResponseUsage$OutputTokensDetails
@@ -25,6 +43,12 @@
 
 (defn- response->map [r]
   (#'openai/response->map r))
+
+(defn- event->map [e]
+  (#'openai/event->map e))
+
+(defn- model->map [m]
+  (#'openai/model->map m))
 
 (defn- opt [o]
   (when (.isPresent ^java.util.Optional o)
@@ -311,3 +335,206 @@
   (let [m (response->map (response [(function-call-item "{not json}")]))]
     (is (= "{not json}" (-> m :output first :arguments)))
     (is (= "" (:text m)))))
+
+(deftest maps-model-to-clojure
+  (let [m (model->map (-> (Model/builder)
+                          (.id "gpt-5.2")
+                          (.created 1790000000)
+                          (.ownedBy "openai")
+                          (.build)))]
+    (is (= {:id "gpt-5.2"
+            :created 1790000000
+            :owned-by "openai"}
+           m))))
+
+(deftest maps-stream-text-events-to-clojure
+  (is (= {:type :output-text-delta
+          :delta "Hel"
+          :item-id "msg_1"
+          :output-index 0}
+         (event->map
+          (ResponseStreamEvent/ofOutputTextDelta
+           (-> (ResponseTextDeltaEvent/builder)
+               (.contentIndex 0)
+               (.delta "Hel")
+               (.itemId "msg_1")
+               (.logprobs [])
+               (.outputIndex 0)
+               (.sequenceNumber 1)
+               (.build))))))
+  (is (= {:type :output-text-done
+          :text "Hello"
+          :item-id "msg_1"
+          :output-index 0}
+         (event->map
+          (ResponseStreamEvent/ofOutputTextDone
+           (-> (ResponseTextDoneEvent/builder)
+               (.contentIndex 0)
+               (.itemId "msg_1")
+               (.logprobs [])
+               (.outputIndex 0)
+               (.sequenceNumber 2)
+               (.text "Hello")
+               (.build)))))))
+
+(deftest maps-stream-function-call-events-to-clojure
+  (is (= {:type :function-call-arguments-delta
+          :delta "{\""
+          :item-id "fc_1"}
+         (event->map
+          (ResponseStreamEvent/ofFunctionCallArgumentsDelta
+           (-> (ResponseFunctionCallArgumentsDeltaEvent/builder)
+               (.delta "{\"")
+               (.itemId "fc_1")
+               (.outputIndex 1)
+               (.sequenceNumber 3)
+               (.build))))))
+  (is (= {:type :function-call-arguments-done
+          :arguments "{\"location\":\"Denver\"}"
+          :item-id "fc_1"}
+         (event->map
+          (ResponseStreamEvent/ofFunctionCallArgumentsDone
+           (-> (ResponseFunctionCallArgumentsDoneEvent/builder)
+               (.arguments "{\"location\":\"Denver\"}")
+               (.itemId "fc_1")
+               (.name "get_weather")
+               (.outputIndex 1)
+               (.sequenceNumber 4)
+               (.build)))))))
+
+(deftest maps-stream-reasoning-and-refusal-events-to-clojure
+  (is (= {:type :reasoning-text-delta :delta "think"}
+         (event->map
+          (ResponseStreamEvent/ofReasoningTextDelta
+           (-> (ResponseReasoningTextDeltaEvent/builder)
+               (.contentIndex 0)
+               (.delta "think")
+               (.itemId "rs_1")
+               (.outputIndex 0)
+               (.sequenceNumber 5)
+               (.build))))))
+  (is (= {:type :reasoning-text-done :text "thought"}
+         (event->map
+          (ResponseStreamEvent/ofReasoningTextDone
+           (-> (ResponseReasoningTextDoneEvent/builder)
+               (.contentIndex 0)
+               (.itemId "rs_1")
+               (.outputIndex 0)
+               (.sequenceNumber 6)
+               (.text "thought")
+               (.build))))))
+  (is (= {:type :refusal-delta :delta "no"}
+         (event->map
+          (ResponseStreamEvent/ofRefusalDelta
+           (-> (ResponseRefusalDeltaEvent/builder)
+               (.contentIndex 0)
+               (.delta "no")
+               (.itemId "msg_1")
+               (.outputIndex 0)
+               (.sequenceNumber 7)
+               (.build))))))
+  (is (= {:type :refusal-done :refusal "nope"}
+         (event->map
+          (ResponseStreamEvent/ofRefusalDone
+           (-> (ResponseRefusalDoneEvent/builder)
+               (.contentIndex 0)
+               (.itemId "msg_1")
+               (.outputIndex 0)
+               (.refusal "nope")
+               (.sequenceNumber 8)
+               (.build)))))))
+
+(deftest maps-stream-output-item-events-to-clojure
+  (is (= {:type :output-item-added
+          :item {:type :function-call
+                 :name "get_weather"
+                 :call-id "call_123"
+                 :id "fc_1"
+                 :arguments {:location "Denver"}}
+          :output-index 1}
+         (event->map
+          (ResponseStreamEvent/ofOutputItemAdded
+           (-> (ResponseOutputItemAddedEvent/builder)
+               (.item (function-call-item "{\"location\":\"Denver\"}"))
+               (.outputIndex 1)
+               (.sequenceNumber 9)
+               (.build))))))
+  (is (= {:type :output-item-done
+          :item {:type :unknown}
+          :output-index 2}
+         (event->map
+          (ResponseStreamEvent/ofOutputItemDone
+           (-> (ResponseOutputItemDoneEvent/builder)
+               (.item (unknown-item))
+               (.outputIndex 2)
+               (.sequenceNumber 10)
+               (.build)))))))
+
+(deftest maps-stream-lifecycle-events-to-clojure
+  (is (= {:type :created}
+         (event->map
+          (ResponseStreamEvent/ofCreated
+           (-> (ResponseCreatedEvent/builder)
+               (.response (response []))
+               (.sequenceNumber 11)
+               (.build))))))
+  (is (= {:type :in-progress}
+         (event->map
+          (ResponseStreamEvent/ofInProgress
+           (-> (ResponseInProgressEvent/builder)
+               (.response (response []))
+               (.sequenceNumber 12)
+               (.build))))))
+  (is (= :completed
+         (:type
+          (event->map
+           (ResponseStreamEvent/ofCompleted
+            (-> (ResponseCompletedEvent/builder)
+                (.response (response [(message-item)]))
+                (.sequenceNumber 13)
+                (.build)))))))
+  (is (= "Hello, world"
+         (-> (event->map
+              (ResponseStreamEvent/ofCompleted
+               (-> (ResponseCompletedEvent/builder)
+                   (.response (response [(message-item)]))
+                   (.sequenceNumber 13)
+                   (.build))))
+             :response
+             :text)))
+  (is (= :incomplete
+         (:type
+          (event->map
+           (ResponseStreamEvent/ofIncomplete
+            (-> (ResponseIncompleteEvent/builder)
+                (.response (response []))
+                (.sequenceNumber 14)
+                (.build)))))))
+  (is (= :failed
+         (:type
+          (event->map
+           (ResponseStreamEvent/ofFailed
+            (-> (ResponseFailedEvent/builder)
+                (.response (response []))
+                (.sequenceNumber 15)
+                (.build))))))))
+
+(deftest maps-stream-error-and-other-events-to-clojure
+  (is (= {:type :error
+          :message "bad request"
+          :code "invalid_request"}
+         (event->map
+          (ResponseStreamEvent/ofError
+           (-> (ResponseErrorEvent/builder)
+               (.code "invalid_request")
+               (.message "bad request")
+               (.param (java.util.Optional/empty))
+               (.sequenceNumber 16)
+               (.build))))))
+  (is (= {:type :other}
+         (event->map
+          (ResponseStreamEvent/ofQueued
+           (-> (com.openai.models.responses.ResponseQueuedEvent/builder)
+               (.response (response []))
+               (.sequenceNumber 17)
+               (.build)))))))
