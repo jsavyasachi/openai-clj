@@ -939,3 +939,53 @@
     (is (true? (-> p .streamOptions opt .includeObfuscation opt)))
     (is (= "omni-moderation-latest" (-> p .moderation opt .model)))
     (is (= "low" (-> p .text opt .verbosity opt str)))))
+
+(def ->embedding-params #'openai/->embedding-params)
+(def embedding-response->map #'openai/embedding-response->map)
+
+(deftest translates-embedding-params
+  (let [^com.openai.models.embeddings.EmbeddingCreateParams p
+        (->embedding-params {:model "text-embedding-3-small"
+                             :input "hello"
+                             :dimensions 256
+                             :user "u1"})]
+    (is (= "text-embedding-3-small" (str (.model p))))
+    (is (= "hello" (-> p .input .asString)))
+    (is (= 256 (opt (.dimensions p))))
+    (is (= "u1" (opt (.user p)))))
+  (testing "vector input becomes array-of-strings"
+    (let [^com.openai.models.embeddings.EmbeddingCreateParams p
+          (->embedding-params {:model "text-embedding-3-small" :input ["a" "b"]})]
+      (is (= ["a" "b"] (vec (-> p .input .asArrayOfStrings))))))
+  (testing "missing keys throw"
+    (is (= {:openai/error :missing-key :key :model}
+           (ex-data-for #(->embedding-params {:input "x"}))))
+    (is (= {:openai/error :missing-key :key :input}
+           (ex-data-for #(->embedding-params {:model "m"}))))))
+
+(deftest maps-embedding-response
+  (let [emb (fn [idx vs]
+              (-> (com.openai.models.embeddings.Embedding/builder)
+                  (.index (int idx))
+                  (.embedding ^java.util.List (mapv float vs))
+                  (.build)))
+        resp (-> (com.openai.models.embeddings.CreateEmbeddingResponse/builder)
+                 (.model "text-embedding-3-small")
+                 (.data [(emb 1 [0.3 0.4]) (emb 0 [0.1 0.2])])
+                 (.usage (-> (com.openai.models.embeddings.CreateEmbeddingResponse$Usage/builder)
+                             (.promptTokens 7)
+                             (.totalTokens 7)
+                             (.build)))
+                 (.build))
+        m (embedding-response->map resp)]
+    (is (= "text-embedding-3-small" (:model m)))
+    (is (= {:prompt-tokens 7 :total-tokens 7} (:usage m)))
+    (testing "embeddings are ordered by index regardless of wire order"
+      (is (= [[(float 0.1) (float 0.2)] [(float 0.3) (float 0.4)]]
+             (:embeddings m))))))
+
+(deftest client-accepts-azure-service-version
+  (is (instance? com.openai.client.OpenAIClient
+                 (openai/client {:api-key "sk-test"
+                                 :base-url "https://example.openai.azure.com"
+                                 :azure-service-version "2024-10-21"}))))

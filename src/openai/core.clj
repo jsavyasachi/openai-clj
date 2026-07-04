@@ -28,6 +28,13 @@
                               Reasoning$Builder
                               ReasoningEffort
                               ResponsesModel)
+           (com.openai.azure AzureOpenAIServiceVersion)
+           (com.openai.models.embeddings CreateEmbeddingResponse
+                                         CreateEmbeddingResponse$Usage
+                                         Embedding
+                                         EmbeddingCreateParams
+                                         EmbeddingCreateParams$Builder
+                                         EmbeddingCreateParams$Input)
            (com.openai.models.models Model
                                       ModelListPage)
            (com.openai.models.responses EasyInputMessage
@@ -147,7 +154,8 @@
                                                       InputTokenCountParams$Builder
                                                       InputTokenCountParams$Truncation
                                                       InputTokenCountResponse)
-           (com.openai.services.blocking ModelService
+           (com.openai.services.blocking EmbeddingService
+                                         ModelService
                                          ResponseService)
            (com.openai.services.blocking.responses InputItemService
                                                     InputTokenService)))
@@ -157,10 +165,12 @@
 (defn client
   "An OpenAI client. With no args, resolves credentials from the environment
   (`OPENAI_API_KEY`). Pass explicit config keys to set client options:
-  `:api-key`, `:organization`, `:project`, `:base-url`, `:timeout-ms`, and
-  `:max-retries`."
+  `:api-key`, `:organization`, `:project`, `:base-url`, `:timeout-ms`,
+  `:max-retries`, and `:azure-service-version` (an Azure OpenAI api-version
+  string, used together with an Azure `:base-url`)."
   (^OpenAIClient [] (OpenAIOkHttpClient/fromEnv))
-  (^OpenAIClient [{:keys [api-key organization project base-url timeout-ms max-retries]}]
+  (^OpenAIClient [{:keys [api-key organization project base-url timeout-ms max-retries
+                          azure-service-version]}]
    (let [^OpenAIOkHttpClient$Builder b (OpenAIOkHttpClient/builder)]
      (when api-key (.apiKey b ^String api-key))
      (when organization (.organization b ^String organization))
@@ -168,6 +178,8 @@
      (when base-url (.baseUrl b ^String base-url))
      (when timeout-ms (.timeout b (Duration/ofMillis (long timeout-ms))))
      (when max-retries (.maxRetries b (int max-retries)))
+     (when azure-service-version
+       (.azureServiceVersion b (AzureOpenAIServiceVersion/fromString ^String azure-service-version)))
      (.build b))))
 
 (defn- service-error-type [e]
@@ -782,6 +794,41 @@
   {:id (.id m)
    :created (.created m)
    :owned-by (.ownedBy m)})
+
+(defn- ->embedding-params ^EmbeddingCreateParams
+  [{:keys [model input dimensions user]}]
+  (when-not model (missing-key! :model))
+  (when-not input (missing-key! :input))
+  (let [^EmbeddingCreateParams$Builder b (EmbeddingCreateParams/builder)]
+    (.model b ^String model)
+    (if (string? input)
+      (.input b (EmbeddingCreateParams$Input/ofString input))
+      (.input b (EmbeddingCreateParams$Input/ofArrayOfStrings ^java.util.List (vec input))))
+    (when dimensions (.dimensions b (long dimensions)))
+    (when user (.user b ^String user))
+    (.build b)))
+
+(defn- embedding-response->map [^CreateEmbeddingResponse r]
+  (let [^CreateEmbeddingResponse$Usage u (.usage r)]
+    {:model (.model r)
+     :embeddings (->> (.data r)
+                      (sort-by (fn [^Embedding e] (.index e)))
+                      (mapv (fn [^Embedding e] (vec (.embedding e)))))
+     :usage {:prompt-tokens (.promptTokens u)
+             :total-tokens (.totalTokens u)}}))
+
+(defn create-embeddings
+  "Create embeddings for `:input` (a string, or a vector of strings) with
+  `:model` (required, e.g. \"text-embedding-3-small\"). Optional: `:dimensions`
+  (truncated output size, supported by v3 models) and `:user`.
+
+  Returns `{:model \"...\" :embeddings [[floats ...] ...] :usage
+  {:prompt-tokens n :total-tokens n}}`; `:embeddings` is ordered to match the
+  input order (one vector even for string input)."
+  [^OpenAIClient client req]
+  (with-api-errors
+    (let [^EmbeddingService svc (.embeddings client)]
+      (embedding-response->map (.create svc (->embedding-params req))))))
 
 (defn list-models
   "List available models as a vector of `{:id :created :owned-by}` maps. Pages
