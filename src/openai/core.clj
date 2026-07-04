@@ -1,23 +1,58 @@
 (ns openai.core
   "Idiomatic Clojure wrapper over the official OpenAI Java SDK
   (`com.openai/openai-java`), focused on the Responses API."
-  (:require [clojure.walk :as walk])
+  (:require [clojure.string :as str]
+            [clojure.walk :as walk]
+            [jsonista.core :as json])
   (:import (com.openai.client OpenAIClient)
            (com.openai.client.okhttp OpenAIOkHttpClient
                                       OpenAIOkHttpClient$Builder)
            (com.openai.core JsonValue)
            (com.openai.models Reasoning
                               Reasoning$Builder
-                              ReasoningEffort)
+                              ReasoningEffort
+                              ResponsesModel)
            (com.openai.models.responses EasyInputMessage
                                          EasyInputMessage$Builder
                                          EasyInputMessage$Role
+                                         FileSearchTool
+                                         FileSearchTool$Builder
+                                         FunctionTool
+                                         FunctionTool$Builder
+                                         FunctionTool$Parameters
+                                         FunctionTool$Parameters$Builder
+                                         Response
                                          ResponseCreateParams
                                          ResponseCreateParams$Builder
                                          ResponseCreateParams$Input
                                          ResponseCreateParams$Metadata
                                          ResponseCreateParams$Metadata$Builder
-                                         ResponseInputItem)))
+                                         ResponseCreateParams$ToolChoice
+                                         ResponseError
+                                         ResponseFunctionToolCall
+                                         ResponseFunctionWebSearch
+                                         ResponseInputItem
+                                         ResponseInputItem$FunctionCallOutput
+                                         ResponseInputItem$FunctionCallOutput$Builder
+                                         ResponseOutputItem
+                                         ResponseOutputMessage
+                                         ResponseOutputMessage$Content
+                                         ResponseOutputRefusal
+                                         ResponseOutputText
+                                         ResponseReasoningItem
+                                         ResponseReasoningItem$Status
+                                         ResponseStatus
+                                         ResponseUsage
+                                         Tool
+                                         Tool$CodeInterpreter
+                                         Tool$CodeInterpreter$Builder
+                                         Tool$CodeInterpreter$Container$CodeInterpreterToolAuto
+                                         Tool$CodeInterpreter$Container$CodeInterpreterToolAuto$Builder
+                                         ToolChoiceFunction
+                                         ToolChoiceFunction$Builder
+                                         ToolChoiceOptions
+                                         WebSearchTool
+                                         WebSearchTool$Type)))
 
 (set! *warn-on-reflection* true)
 
@@ -46,11 +81,28 @@
 (defn- ->role ^EasyInputMessage$Role [role]
   (EasyInputMessage$Role/of (name role)))
 
-(defn- ->input-message ^ResponseInputItem [{:keys [role content]}]
-  (let [^EasyInputMessage$Builder b (EasyInputMessage/builder)]
-    (.role b (->role role))
-    (.content b ^String content)
-    (ResponseInputItem/ofEasyInputMessage (.build b))))
+(def ^:private json-mapper (json/object-mapper {:decode-key-fn true}))
+
+(defn- encode-output [x]
+  (if (string? x)
+    x
+    (json/write-value-as-string x)))
+
+(defn- ->function-call-output ^ResponseInputItem [{:keys [call-id output]}]
+  (let [^ResponseInputItem$FunctionCallOutput$Builder b
+        (ResponseInputItem$FunctionCallOutput/builder)]
+    (when-not call-id (missing-key! :call-id))
+    (.callId b ^String call-id)
+    (.output b ^String (encode-output output))
+    (ResponseInputItem/ofFunctionCallOutput (.build b))))
+
+(defn- ->input-message ^ResponseInputItem [{:keys [role content type] :as item}]
+  (if (= :function-call-output (keyword type))
+    (->function-call-output item)
+    (let [^EasyInputMessage$Builder b (EasyInputMessage/builder)]
+      (.role b (->role role))
+      (.content b ^String content)
+      (ResponseInputItem/ofEasyInputMessage (.build b)))))
 
 (defn- ->input ^ResponseCreateParams$Input [input]
   (if (string? input)
@@ -63,9 +115,72 @@
     (when effort (.effort b (ReasoningEffort/of (name effort))))
     (.build b)))
 
+(defn- ->function-parameters ^FunctionTool$Parameters [m]
+  (let [^FunctionTool$Parameters$Builder b (FunctionTool$Parameters/builder)]
+    (doseq [[k v] (walk/stringify-keys m)]
+      (.putAdditionalProperty b ^String k (JsonValue/from v)))
+    (.build b)))
+
+(defn- ->function-tool ^FunctionTool [{:keys [name description parameters strict]}]
+  (let [^FunctionTool$Builder b (FunctionTool/builder)]
+    (when-not name (missing-key! :name))
+    (.name b ^String name)
+    (when description (.description b ^String description))
+    (when parameters (.parameters b (->function-parameters parameters)))
+    (when (some? strict) (.strict b (boolean strict)))
+    (.build b)))
+
+(defn- ->code-interpreter ^Tool$CodeInterpreter [{:keys [container]}]
+  (let [^Tool$CodeInterpreter$Builder b (Tool$CodeInterpreter/builder)]
+    (if container
+      (.container b ^String container)
+      (.container b
+                  (let [^Tool$CodeInterpreter$Container$CodeInterpreterToolAuto$Builder ab
+                        (Tool$CodeInterpreter$Container$CodeInterpreterToolAuto/builder)]
+                    (.build ab))))
+    (.build b)))
+
+(defn- ->file-search-tool ^FileSearchTool [{:keys [vector-store-ids]}]
+  (let [^FileSearchTool$Builder b (FileSearchTool/builder)]
+    (when-not (seq vector-store-ids) (missing-key! :vector-store-ids))
+    (.vectorStoreIds b ^java.util.List (vec vector-store-ids))
+    (.build b)))
+
+(defn- ->tool ^Tool [{:keys [type] :as tool}]
+  (case (keyword type)
+    :function (Tool/ofFunction (->function-tool tool))
+    :web-search (Tool/ofWebSearch (-> (WebSearchTool/builder)
+                                       (.type WebSearchTool$Type/WEB_SEARCH)
+                                       (.build)))
+    :file-search (Tool/ofFileSearch (->file-search-tool tool))
+    :code-interpreter (Tool/ofCodeInterpreter (->code-interpreter tool))
+    (throw (ex-info (str "Unknown tool type " type)
+                    {:openai/error :unknown-tool-type :type type}))))
+
+(defn- ->tool-choice ^ResponseCreateParams$ToolChoice [choice]
+  (if (map? choice)
+    (case (keyword (:type choice))
+      :function (ResponseCreateParams$ToolChoice/ofFunction
+                 (let [^ToolChoiceFunction$Builder b (ToolChoiceFunction/builder)]
+                   (when-not (:name choice) (missing-key! :name))
+                   (.name b ^String (:name choice))
+                   (.build b)))
+      (throw (ex-info (str "Unknown tool choice type " (:type choice))
+                      {:openai/error :unknown-tool-choice-type
+                       :type (:type choice)})))
+    (ResponseCreateParams$ToolChoice/ofOptions
+     (case (keyword choice)
+       :auto ToolChoiceOptions/AUTO
+       :required ToolChoiceOptions/REQUIRED
+       :none ToolChoiceOptions/NONE
+       (throw (ex-info (str "Unknown tool choice " choice)
+                       {:openai/error :unknown-tool-choice
+                        :tool-choice choice}))))))
+
 (defn- ->params ^ResponseCreateParams
   [{:keys [model input instructions max-output-tokens temperature top-p
-           metadata previous-response-id store reasoning user]}]
+           metadata previous-response-id store reasoning user tools tool-choice
+           parallel-tool-calls]}]
   (when-not model (missing-key! :model))
   (when-not input (missing-key! :input))
   (let [^ResponseCreateParams$Builder b (ResponseCreateParams/builder)]
@@ -80,4 +195,118 @@
     (when (some? store) (.store b (boolean store)))
     (when reasoning (.reasoning b (->reasoning reasoning)))
     (when user (.user b ^String user))
+    (doseq [t tools] (.addTool b (->tool t)))
+    (when tool-choice (.toolChoice b (->tool-choice tool-choice)))
+    (when (some? parallel-tool-calls)
+      (.parallelToolCalls b (boolean parallel-tool-calls)))
     (.build b)))
+
+(defn- ->keyword [s]
+  (-> s str str/lower-case (str/replace "_" "-") keyword))
+
+(defn- parse-arguments [^String s]
+  (try
+    (json/read-value s json-mapper)
+    (catch Exception _
+      s)))
+
+(defn- content->map [^ResponseOutputMessage$Content c]
+  (cond
+    (.isOutputText c) (let [^ResponseOutputText t (.asOutputText c)]
+                        {:type :text :text (.text t)})
+    (.isRefusal c) (let [^ResponseOutputRefusal r (.asRefusal c)]
+                     {:type :refusal :refusal (.refusal r)})
+    :else {:type :unknown}))
+
+(defn- message->map [^ResponseOutputMessage m]
+  {:type :message
+   :role :assistant
+   :id (.id m)
+   :content (mapv content->map (.content m))})
+
+(defn- function-call->map [^ResponseFunctionToolCall f]
+  (cond-> {:type :function-call
+           :name (.name f)
+           :call-id (.callId f)
+           :arguments (parse-arguments (.arguments f))}
+    (.isPresent (.id f)) (assoc :id (.get (.id f)))))
+
+(defn- reasoning->map [^ResponseReasoningItem r]
+  (cond-> {:type :reasoning}
+    (.isPresent (.status r)) (assoc :status (->keyword (.asString ^ResponseReasoningItem$Status (.get (.status r)))))))
+
+(defn- web-search-call->map [^ResponseFunctionWebSearch c]
+  {:type :web-search-call :status (->keyword (.asString (.status c)))})
+
+(defn- file-search-call->map [^com.openai.models.responses.ResponseFileSearchToolCall c]
+  {:type :file-search-call :status (->keyword (.asString (.status c)))})
+
+(defn- code-interpreter-call->map [^com.openai.models.responses.ResponseCodeInterpreterToolCall c]
+  {:type :code-interpreter-call :status (->keyword (.asString (.status c)))})
+
+(defn- output-item->map [^ResponseOutputItem item]
+  (cond
+    (.isMessage item) (message->map (.asMessage item))
+    (.isFunctionCall item) (function-call->map (.asFunctionCall item))
+    (.isReasoning item) (reasoning->map (.asReasoning item))
+    (.isWebSearchCall item) (web-search-call->map (.asWebSearchCall item))
+    (.isFileSearchCall item) (file-search-call->map (.asFileSearchCall item))
+    (.isCodeInterpreterCall item) (code-interpreter-call->map (.asCodeInterpreterCall item))
+    :else {:type :unknown}))
+
+(defn- usage->map [^ResponseUsage u]
+  {:input-tokens (.inputTokens u)
+   :output-tokens (.outputTokens u)
+   :total-tokens (.totalTokens u)})
+
+(defn- error->map [^ResponseError e]
+  {:code (->keyword (.asString (.code e)))
+   :message (.message e)})
+
+(defn- output-text [items]
+  (apply str
+         (for [item items
+               :when (= :message (:type item))
+               content (:content item)
+               :when (= :text (:type content))]
+           (:text content))))
+
+(defn- response->map [^Response r]
+  (let [items (mapv output-item->map (.output r))]
+    (cond-> {:id (.id r)
+             :model (.asString ^ResponsesModel (.model r))
+             :output items
+             :text (output-text items)
+             :created-at (.createdAt r)}
+      (.isPresent (.status r)) (assoc :status (->keyword (.asString ^ResponseStatus (.get (.status r)))))
+      (.isPresent (.usage r)) (assoc :usage (usage->map (.get (.usage r))))
+      (.isPresent (.error r)) (assoc :error (error->map (.get (.error r))))
+      (.isPresent (.incompleteDetails r)) (assoc :incomplete-details {})
+      (.isPresent (.previousResponseId r)) (assoc :previous-response-id (.get (.previousResponseId r))))))
+
+(defn create-response
+  "Send a Responses API request and return a Clojure map.
+
+  Request keys: `:model` (required string), `:input` (required string or vector),
+  `:instructions`, `:max-output-tokens`, `:temperature`, `:top-p`, `:metadata`,
+  `:previous-response-id`, `:store`, `:reasoning`, `:user`, `:tools`,
+  `:tool-choice`, and `:parallel-tool-calls`.
+
+  Message-vector input items accept `{:role :system|:developer|:user|:assistant
+  :content \"...\"}` and `{:type :function-call-output :call-id \"...\"
+  :output \"...\"}`. Map outputs are JSON-encoded.
+
+  Tools: `{:type :function :name \"...\" :description \"...\" :strict true
+  :parameters {...}}`, `{:type :web-search}`, `{:type :file-search
+  :vector-store-ids [...]}`, or `{:type :code-interpreter :container \"...\"}`.
+  Code interpreter defaults to an auto container when `:container` is omitted.
+
+  Tool choice: `:auto`, `:required`, `:none`, or `{:type :function :name \"...\"}`.
+
+  Returns `{:id :model :status :output :text :usage :created-at}` plus
+  `:error`, `:incomplete-details`, or `:previous-response-id` when present.
+  Output items are normalized to `:message`, `:function-call`, `:reasoning`,
+  `:web-search-call`, `:file-search-call`, `:code-interpreter-call`, or
+  `:unknown`."
+  [^OpenAIClient client req]
+  (response->map (.create (.responses client) (->params req))))
