@@ -9,6 +9,7 @@
                                       OpenAIOkHttpClient$Builder)
            (com.openai.core JsonValue)
            (com.openai.core.http StreamResponse)
+           (java.time Duration)
            (com.openai.models Reasoning
                               Reasoning$Builder
                               ReasoningEffort
@@ -30,7 +31,9 @@
                                          ResponseCreateParams$Input
                                          ResponseCreateParams$Metadata
                                          ResponseCreateParams$Metadata$Builder
+                                         ResponseCreateParams$ServiceTier
                                          ResponseCreateParams$ToolChoice
+                                         ResponseCreateParams$Truncation
                                          ResponseCompletedEvent
                                          ResponseError
                                          ResponseErrorEvent
@@ -40,9 +43,22 @@
                                          ResponseFunctionToolCall
                                          ResponseFunctionWebSearch
                                          ResponseIncompleteEvent
+                                         ResponseIncludable
+                                         ResponseFormatTextJsonSchemaConfig
+                                         ResponseFormatTextJsonSchemaConfig$Builder
+                                         ResponseFormatTextJsonSchemaConfig$Schema
+                                         ResponseFormatTextJsonSchemaConfig$Schema$Builder
+                                         ResponseInputContent
+                                         ResponseInputFile
+                                         ResponseInputFile$Builder
+                                         ResponseInputImage
+                                         ResponseInputImage$Builder
+                                         ResponseInputImage$Detail
                                          ResponseInputItem
                                          ResponseInputItem$FunctionCallOutput
                                          ResponseInputItem$FunctionCallOutput$Builder
+                                         ResponseInputText
+                                         ResponseInputText$Builder
                                          ResponseOutputItemAddedEvent
                                          ResponseOutputItemDoneEvent
                                          ResponseOutputItem
@@ -58,6 +74,8 @@
                                          ResponseRefusalDoneEvent
                                          ResponseStatus
                                          ResponseStreamEvent
+                                         ResponseTextConfig
+                                         ResponseTextConfig$Builder
                                          ResponseTextDeltaEvent
                                          ResponseTextDoneEvent
                                          ResponseUsage
@@ -78,14 +96,18 @@
 
 (defn client
   "An OpenAI client. With no args, resolves credentials from the environment
-  (`OPENAI_API_KEY`). Pass explicit config keys to set client options."
+  (`OPENAI_API_KEY`). Pass explicit config keys to set client options:
+  `:api-key`, `:organization`, `:project`, `:base-url`, `:timeout-ms`, and
+  `:max-retries`."
   (^OpenAIClient [] (OpenAIOkHttpClient/fromEnv))
-  (^OpenAIClient [{:keys [api-key organization project base-url]}]
+  (^OpenAIClient [{:keys [api-key organization project base-url timeout-ms max-retries]}]
    (let [^OpenAIOkHttpClient$Builder b (OpenAIOkHttpClient/builder)]
      (when api-key (.apiKey b ^String api-key))
      (when organization (.organization b ^String organization))
      (when project (.project b ^String project))
      (when base-url (.baseUrl b ^String base-url))
+     (when timeout-ms (.timeout b (Duration/ofMillis (long timeout-ms))))
+     (when max-retries (.maxRetries b (int max-retries)))
      (.build b))))
 
 (defn- missing-key! [k]
@@ -100,6 +122,9 @@
 
 (defn- ->role ^EasyInputMessage$Role [role]
   (EasyInputMessage$Role/of (name role)))
+
+(defn- enum-name [k]
+  (str/replace (name k) "-" "_"))
 
 (def ^:private json-mapper (json/object-mapper {:decode-key-fn true}))
 
@@ -116,12 +141,45 @@
     (.output b ^String (encode-output output))
     (ResponseInputItem/ofFunctionCallOutput (.build b))))
 
+(defn- ->input-text ^ResponseInputContent [{:keys [text]}]
+  (let [^ResponseInputText$Builder b (ResponseInputText/builder)]
+    (when-not text (missing-key! :text))
+    (.text b ^String text)
+    (ResponseInputContent/ofInputText (.build b))))
+
+(defn- ->input-image ^ResponseInputContent [{:keys [image-url file-id detail]}]
+  (let [^ResponseInputImage$Builder b (ResponseInputImage/builder)]
+    (when image-url (.imageUrl b ^String image-url))
+    (when file-id (.fileId b ^String file-id))
+    (when detail (.detail b (ResponseInputImage$Detail/of (enum-name detail))))
+    (ResponseInputContent/ofInputImage (.build b))))
+
+(defn- ->input-file ^ResponseInputContent [{:keys [file-id filename file-data]}]
+  (let [^ResponseInputFile$Builder b (ResponseInputFile/builder)]
+    (when file-id (.fileId b ^String file-id))
+    (when filename (.filename b ^String filename))
+    (when file-data (.fileData b ^String file-data))
+    (ResponseInputContent/ofInputFile (.build b))))
+
+(defn- ->input-content ^ResponseInputContent [{:keys [type] :as part}]
+  (case (keyword type)
+    :text (->input-text part)
+    :image (->input-image part)
+    :file (->input-file part)
+    (throw (ex-info (str "Unknown content type " type)
+                    {:openai/error :unknown-content-type :type type}))))
+
 (defn- ->input-message ^ResponseInputItem [{:keys [role content type] :as item}]
   (if (= :function-call-output (keyword type))
     (->function-call-output item)
     (let [^EasyInputMessage$Builder b (EasyInputMessage/builder)]
+      (when-not role (missing-key! :role))
+      (when-not content (missing-key! :content))
       (.role b (->role role))
-      (.content b ^String content)
+      (if (string? content)
+        (.content b ^String content)
+        (.contentOfResponseInputMessageContentList
+         b ^java.util.List (mapv ->input-content content)))
       (ResponseInputItem/ofEasyInputMessage (.build b)))))
 
 (defn- ->input ^ResponseCreateParams$Input [input]
@@ -140,6 +198,27 @@
     (doseq [[k v] (walk/stringify-keys m)]
       (.putAdditionalProperty b ^String k (JsonValue/from v)))
     (.build b)))
+
+(defn- ->json-schema-properties [m]
+  (into {}
+        (map (fn [[k v]] [k (JsonValue/from v)]))
+        (walk/stringify-keys m)))
+
+(defn- ->json-schema-format ^ResponseTextConfig [{:keys [name schema strict description]}]
+  (when-not name (missing-key! :name))
+  (when-not schema (missing-key! :schema))
+  (let [^ResponseFormatTextJsonSchemaConfig$Schema$Builder sb
+        (ResponseFormatTextJsonSchemaConfig$Schema/builder)
+        ^ResponseFormatTextJsonSchemaConfig$Builder fb
+        (ResponseFormatTextJsonSchemaConfig/builder)
+        ^ResponseTextConfig$Builder tb (ResponseTextConfig/builder)]
+    (.additionalProperties sb ^java.util.Map (->json-schema-properties schema))
+    (.name fb ^String name)
+    (.schema fb (.build sb))
+    (when description (.description fb ^String description))
+    (when (some? strict) (.strict fb (boolean strict)))
+    (.format tb (.build fb))
+    (.build tb)))
 
 (defn- ->function-tool ^FunctionTool [{:keys [name description parameters strict]}]
   (let [^FunctionTool$Builder b (FunctionTool/builder)]
@@ -200,7 +279,9 @@
 (defn- ->params ^ResponseCreateParams
   [{:keys [model input instructions max-output-tokens temperature top-p
            metadata previous-response-id store reasoning user tools tool-choice
-           parallel-tool-calls]}]
+           parallel-tool-calls background include truncation prompt-cache-key
+           safety-identifier service-tier max-tool-calls top-logprobs
+           json-schema]}]
   (when-not model (missing-key! :model))
   (when-not input (missing-key! :input))
   (let [^ResponseCreateParams$Builder b (ResponseCreateParams/builder)]
@@ -208,8 +289,16 @@
     (.input b (->input input))
     (when instructions (.instructions b ^String instructions))
     (when max-output-tokens (.maxOutputTokens b (long max-output-tokens)))
+    (when max-tool-calls (.maxToolCalls b (long max-tool-calls)))
     (when temperature (.temperature b (double temperature)))
     (when top-p (.topP b (double top-p)))
+    (when top-logprobs (.topLogprobs b (long top-logprobs)))
+    (when (some? background) (.background b (boolean background)))
+    (doseq [i include] (.addInclude b (ResponseIncludable/of (enum-name i))))
+    (when truncation (.truncation b (ResponseCreateParams$Truncation/of (enum-name truncation))))
+    (when prompt-cache-key (.promptCacheKey b ^String prompt-cache-key))
+    (when safety-identifier (.safetyIdentifier b ^String safety-identifier))
+    (when service-tier (.serviceTier b (ResponseCreateParams$ServiceTier/of (enum-name service-tier))))
     (when metadata (.metadata b (->metadata metadata)))
     (when previous-response-id (.previousResponseId b ^String previous-response-id))
     (when (some? store) (.store b (boolean store)))
@@ -219,6 +308,7 @@
     (when tool-choice (.toolChoice b (->tool-choice tool-choice)))
     (when (some? parallel-tool-calls)
       (.parallelToolCalls b (boolean parallel-tool-calls)))
+    (when json-schema (.text b (->json-schema-format json-schema)))
     (.build b)))
 
 (defn- ->keyword [s]
@@ -310,11 +400,17 @@
   Request keys: `:model` (required string), `:input` (required string or vector),
   `:instructions`, `:max-output-tokens`, `:temperature`, `:top-p`, `:metadata`,
   `:previous-response-id`, `:store`, `:reasoning`, `:user`, `:tools`,
-  `:tool-choice`, and `:parallel-tool-calls`.
+  `:tool-choice`, `:parallel-tool-calls`, `:background`, `:include`,
+  `:truncation`, `:prompt-cache-key`, `:safety-identifier`, `:service-tier`,
+  `:max-tool-calls`, `:top-logprobs`, and `:json-schema`.
 
   Message-vector input items accept `{:role :system|:developer|:user|:assistant
-  :content \"...\"}` and `{:type :function-call-output :call-id \"...\"
-  :output \"...\"}`. Map outputs are JSON-encoded.
+  :content \"...\"}`, multimodal content vectors containing text, image, or file
+  part maps, and `{:type :function-call-output :call-id \"...\" :output \"...\"}`.
+  Map outputs are JSON-encoded.
+
+  Structured outputs: `:json-schema {:name \"...\" :schema {...} :strict true
+  :description \"...\"}`.
 
   Tools: `{:type :function :name \"...\" :description \"...\" :strict true
   :parameters {...}}`, `{:type :web-search}`, `{:type :file-search

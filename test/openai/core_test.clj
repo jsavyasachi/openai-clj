@@ -14,6 +14,7 @@
                                         ResponseFunctionCallArgumentsDoneEvent
                                         ResponseIncompleteEvent
                                         ResponseInProgressEvent
+                                        ResponseInputContent
                                         ResponseInputItem
                                         ResponseOutputItemAddedEvent
                                         ResponseOutputItemDoneEvent
@@ -65,7 +66,9 @@
   (let [c (openai/client {:api-key "sk-test"
                           :organization "org-test"
                           :project "proj-test"
-                          :base-url "https://example.test/v1"})]
+                          :base-url "https://example.test/v1"
+                          :timeout-ms 1000
+                          :max-retries 1})]
     (is (instance? OpenAIClient c))
     (.close ^OpenAIClient c)))
 
@@ -100,16 +103,34 @@
                    :input "hi"
                    :instructions "follow these"
                    :max-output-tokens 512
+                   :max-tool-calls 7
                    :temperature 0.7
                    :top-p 0.9
+                   :top-logprobs 3
+                   :background true
+                   :include [:web-search-call.action.sources
+                             :message.output-text.logprobs]
+                   :truncation :auto
+                   :prompt-cache-key "cache-key"
+                   :safety-identifier "safe-user"
+                   :service-tier :priority
                    :previous-response-id "resp_123"
                    :store false
                    :user "end-user-id"
                    :reasoning {:effort :medium}})]
     (is (= "follow these" (opt (.instructions p))))
     (is (= 512 (opt (.maxOutputTokens p))))
+    (is (= 7 (opt (.maxToolCalls p))))
     (is (= 0.7 (opt (.temperature p))))
     (is (= 0.9 (opt (.topP p))))
+    (is (= 3 (opt (.topLogprobs p))))
+    (is (true? (opt (.background p))))
+    (is (= ["web_search_call.action.sources" "message.output_text.logprobs"]
+           (mapv #(.asString %) (opt (.include p)))))
+    (is (= "auto" (.asString (opt (.truncation p)))))
+    (is (= "cache-key" (opt (.promptCacheKey p))))
+    (is (= "safe-user" (opt (.safetyIdentifier p))))
+    (is (= "priority" (.asString (opt (.serviceTier p)))))
     (is (= "resp_123" (opt (.previousResponseId p))))
     (is (false? (opt (.store p))))
     (is (= "end-user-id" (opt (.user p))))
@@ -129,7 +150,15 @@
            (ex-data-for #(params {:input "hi"})))))
   (testing "missing input"
     (is (= {:openai/error :missing-key :key :input}
-           (ex-data-for #(params {:model "gpt-5.2"}))))))
+           (ex-data-for #(params {:model "gpt-5.2"})))))
+  (testing "missing role"
+    (is (= {:openai/error :missing-key :key :role}
+           (ex-data-for #(params {:model "gpt-5.2"
+                                  :input [{:content "hi"}]})))))
+  (testing "missing content"
+    (is (= {:openai/error :missing-key :key :content}
+           (ex-data-for #(params {:model "gpt-5.2"
+                                  :input [{:role :user}]}))))))
 
 (deftest ignores-unknown-keys
   (let [p (params {:model "gpt-5.2"
@@ -211,6 +240,36 @@
                    :parallel-tool-calls false})]
     (is (false? (opt (.parallelToolCalls p))))))
 
+(deftest translates-json-schema-output-format
+  (let [p (params {:model "gpt-5.2"
+                   :input "hi"
+                   :json-schema {:name "answer"
+                                 :description "Structured answer"
+                                 :strict true
+                                 :schema {:type "object"
+                                          :properties {:answer {:type "string"}}
+                                          :required ["answer"]}}})
+        cfg (-> p .text opt .format opt .asJsonSchema)
+        props (._additionalProperties (.schema cfg))
+        answer-props (-> (get props "properties")
+                         (.convert java.util.Map)
+                         (get "answer"))]
+    (is (= "answer" (.name cfg)))
+    (is (= "Structured answer" (opt (.description cfg))))
+    (is (true? (opt (.strict cfg))))
+    (is (= "object" (.asStringOrThrow (get props "type"))))
+    (is (= "string" (get answer-props "type"))))
+  (testing "missing name"
+    (is (= {:openai/error :missing-key :key :name}
+           (ex-data-for #(params {:model "gpt-5.2"
+                                  :input "hi"
+                                  :json-schema {:schema {:type "object"}}})))))
+  (testing "missing schema"
+    (is (= {:openai/error :missing-key :key :schema}
+           (ex-data-for #(params {:model "gpt-5.2"
+                                  :input "hi"
+                                  :json-schema {:name "answer"}}))))))
+
 (deftest translates-function-call-output-input
   (testing "string output"
     (let [p (params {:model "gpt-5.2"
@@ -229,6 +288,59 @@
                               :output {:forecast "sunny"}}]})
           fco (.asFunctionCallOutput (first (.asResponse (opt (.input p)))))]
       (is (= "{\"forecast\":\"sunny\"}" (.asString (.output fco)))))))
+
+(defn- message-content-list [p]
+  (-> ^ResponseCreateParams p
+      .input
+      opt
+      .asResponse
+      first
+      .asEasyInputMessage
+      .content
+      .asResponseInputMessageContentList))
+
+(deftest translates-multimodal-message-content
+  (testing "mixed text and image url"
+    (let [parts (message-content-list
+                 (params {:model "gpt-5.2"
+                          :input [{:role :user
+                                   :content [{:type :text :text "look"}
+                                             {:type :image
+                                              :image-url "https://example.test/cat.png"
+                                              :detail :high}]}]}))
+          text-part (.asInputText ^ResponseInputContent (first parts))
+          image-part (.asInputImage ^ResponseInputContent (second parts))]
+      (is (= "look" (.text text-part)))
+      (is (= "https://example.test/cat.png" (opt (.imageUrl image-part))))
+      (is (= "high" (.asString (.detail image-part))))))
+  (testing "image file id"
+    (let [image-part (-> (message-content-list
+                          (params {:model "gpt-5.2"
+                                   :input [{:role :user
+                                            :content [{:type :image
+                                                       :file-id "file_123"
+                                                       :detail :low}]}]}))
+                         first
+                         .asInputImage)]
+      (is (= "file_123" (opt (.fileId image-part))))
+      (is (= "low" (.asString (.detail image-part))))))
+  (testing "file part"
+    (let [file-part (-> (message-content-list
+                         (params {:model "gpt-5.2"
+                                  :input [{:role :user
+                                           :content [{:type :file
+                                                      :filename "paper.pdf"
+                                                      :file-data "data:application/pdf;base64,AAAA"}]}]}))
+                        first
+                        .asInputFile)]
+      (is (= "paper.pdf" (opt (.filename file-part))))
+      (is (= "data:application/pdf;base64,AAAA" (opt (.fileData file-part))))))
+  (testing "unknown part type"
+    (is (= {:openai/error :unknown-content-type :type :audio}
+           (ex-data-for #(params {:model "gpt-5.2"
+                                  :input [{:role :user
+                                           :content [{:type :audio
+                                                      :text "hi"}]}]}))))))
 
 (defn- text-content [s]
   (ResponseOutputMessage$Content/ofOutputText
