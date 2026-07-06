@@ -17,13 +17,13 @@ Responses API.
 deps.edn:
 
 ```clojure
-net.clojars.savya/openai-clj {:mvn/version "0.4.0"}
+net.clojars.savya/openai-clj {:mvn/version "0.5.0"}
 ```
 
 Leiningen:
 
 ```clojure
-[net.clojars.savya/openai-clj "0.4.0"]
+[net.clojars.savya/openai-clj "0.5.0"]
 ```
 
 Tracks [`com.openai/openai-java` 4.41.0](https://github.com/openai/openai-java/releases/tag/v4.41.0).
@@ -152,6 +152,14 @@ Structured outputs use `:json-schema`:
           :max-num-results 5
           :filters {:type "eq" :key "kind" :value "docs"}
           :ranking-options {:ranker "auto" :score-threshold 0.5}}
+         {:type :file-search
+          :vector-store-ids ["vs_123"]
+          ;; compound filters compose comparisons with :and/:or and may nest
+          :filters {:type :and
+                    :filters [{:type :eq :key "kind" :value "docs"}
+                              {:type :or
+                               :filters [{:type :gte :key "year" :value 2024}
+                                         {:type :eq :key "team" :value "core"}]}]}}
          {:type :code-interpreter}
          {:type :code-interpreter :container "cntr_123"}
          {:type :mcp
@@ -196,6 +204,31 @@ Tool choice accepts `:auto`, `:required`, `:none`, or
 ;;     :embeddings [[0.01 -0.02 ...] [0.03 0.04 ...]]
 ;;     :usage {:prompt-tokens 8 :total-tokens 8}}
 ```
+
+### Files And Batches
+
+```clojure
+(openai/upload-file client {:file "requests.jsonl" :purpose :batch})
+;; :file accepts a Path, string path, byte array, or InputStream
+;; (pass :filename with byte-array/stream input);
+;; optional :expires-after {:seconds n}
+(openai/get-file client "file_123")
+(openai/list-files client {:purpose :batch :order :desc :limit 10})
+(openai/file-content client "file_123") ;; => byte[]
+(openai/delete-file client "file_123")
+
+(openai/create-batch client {:input-file-id "file_123"
+                             :endpoint "/v1/responses"})
+;; optional :completion-window (default "24h"), :metadata,
+;; :output-expires-after {:seconds n}
+(openai/get-batch client "batch_123")
+(openai/list-batches client {:limit 10})
+(openai/cancel-batch client "batch_123")
+```
+
+Batch maps carry `:id :status :endpoint :input-file-id :completion-window
+:created-at` plus `:output-file-id`, `:error-file-id`, `:request-counts`, and
+timestamps when present.
 
 ### Azure OpenAI
 
@@ -254,10 +287,9 @@ Other SDK exceptions (e.g. `OpenAIInvalidDataException`) propagate unchanged.
 In scope: Responses API, structured outputs, multimodal input parts, response
 streaming, response lifecycle subservices, response compaction, token counting,
 built-in Responses tools, MCP tools, client options (including Azure OpenAI
-endpoints), embeddings, and models.
+endpoints), embeddings, files, batches, and models.
 
-Out of scope: chat completions, embeddings, images API, audio, realtime, and
-batches.
+Out of scope: chat completions, images API, audio, and realtime.
 
 ## Running tests
 

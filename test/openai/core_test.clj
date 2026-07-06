@@ -989,3 +989,191 @@
                  (openai/client {:api-key "sk-test"
                                  :base-url "https://example.openai.azure.com"
                                  :azure-service-version "2024-10-21"}))))
+
+(deftest translates-compound-file-search-filters
+  (testing "and/or of comparison filters"
+    (let [t (first (opt (.tools (params {:model "gpt-5.2"
+                                         :input "hi"
+                                         :tools [{:type :file-search
+                                                  :vector-store-ids ["vs_1"]
+                                                  :filters {:type :and
+                                                            :filters [{:type :eq :key "kind" :value "docs"}
+                                                                      {:type :gte :key "year" :value 2024}]}}]}))))
+          fs (opt (.filters (.asFileSearch t)))
+          cf (.asCompoundFilter fs)]
+      (is (.isCompoundFilter fs))
+      (is (= "and" (.asString (.type cf))))
+      (let [[a b] (vec (.filters cf))]
+        (is (= "kind" (.key (opt (.comparison a)))))
+        (is (= "eq" (.asString (.type (opt (.comparison a))))))
+        (is (= "year" (.key (opt (.comparison b)))))
+        (is (= 2024.0 (opt (.number (.value (opt (.comparison b))))))))))
+  (testing "nested compound filter"
+    (let [t (first (opt (.tools (params {:model "gpt-5.2"
+                                         :input "hi"
+                                         :tools [{:type :file-search
+                                                  :vector-store-ids ["vs_1"]
+                                                  :filters {:type :or
+                                                            :filters [{:type :eq :key "kind" :value "docs"}
+                                                                      {:type :and
+                                                                       :filters [{:type :eq :key "team" :value "core"}
+                                                                                 {:type :ne :key "draft" :value true}]}]}}]}))))
+          cf (.asCompoundFilter (opt (.filters (.asFileSearch t))))
+          [_ nested] (vec (.filters cf))
+          j (opt (.jsonValue nested))
+          nm (.convert j java.util.Map)]
+      (is (= "or" (.asString (.type cf))))
+      (is (some? nm))
+      (is (= "and" (get nm "type")))
+      (is (= 2 (count (get nm "filters"))))
+      (is (= {"type" "eq" "key" "team" "value" "core"}
+             (into {} (first (get nm "filters")))))))
+  (testing "plain comparison map is still a comparison filter"
+    (let [t (first (opt (.tools (params {:model "gpt-5.2"
+                                         :input "hi"
+                                         :tools [{:type :file-search
+                                                  :vector-store-ids ["vs_1"]
+                                                  :filters {:type :eq :key "kind" :value "docs"}}]}))))
+          fs (opt (.filters (.asFileSearch t)))]
+      (is (.isComparisonFilter fs)))))
+
+(def ->batch-create-params #'openai/->batch-create-params)
+(def batch->map #'openai/batch->map)
+(def ->batch-list-params #'openai/->batch-list-params)
+
+(deftest translates-batch-create-params
+  (let [^com.openai.models.batches.BatchCreateParams p
+        (->batch-create-params {:input-file-id "file_1"
+                                :endpoint "/v1/responses"
+                                :completion-window "24h"
+                                :metadata {:job "nightly"}
+                                :output-expires-after {:seconds 3600}})]
+    (is (= "file_1" (.inputFileId p)))
+    (is (= "/v1/responses" (.asString (.endpoint p))))
+    (is (= "24h" (.asString (.completionWindow p))))
+    (is (= "nightly" (-> p .metadata opt ._additionalProperties (get "job") .asStringOrThrow)))
+    (is (= 3600 (-> p .outputExpiresAfter opt .seconds))))
+  (testing "completion window defaults to 24h"
+    (let [^com.openai.models.batches.BatchCreateParams p
+          (->batch-create-params {:input-file-id "file_1" :endpoint "/v1/responses"})]
+      (is (= "24h" (.asString (.completionWindow p))))))
+  (testing "missing keys throw"
+    (is (= {:openai/error :missing-key :key :input-file-id}
+           (ex-data-for #(->batch-create-params {:endpoint "/v1/responses"}))))
+    (is (= {:openai/error :missing-key :key :endpoint}
+           (ex-data-for #(->batch-create-params {:input-file-id "file_1"}))))))
+
+(deftest maps-batch-to-clojure
+  (let [batch (-> (com.openai.models.batches.Batch/builder)
+                  (.id "batch_1")
+                  (.completionWindow "24h")
+                  (.createdAt 123)
+                  (.endpoint "/v1/responses")
+                  (.inputFileId "file_in")
+                  (.status com.openai.models.batches.Batch$Status/COMPLETED)
+                  (.outputFileId "file_out")
+                  (.errorFileId "file_err")
+                  (.requestCounts (-> (com.openai.models.batches.BatchRequestCounts/builder)
+                                      (.completed 9) (.failed 1) (.total 10)
+                                      (.build)))
+                  (.build))
+        m (batch->map batch)]
+    (is (= {:id "batch_1"
+            :status :completed
+            :endpoint "/v1/responses"
+            :input-file-id "file_in"
+            :completion-window "24h"
+            :created-at 123
+            :output-file-id "file_out"
+            :error-file-id "file_err"
+            :request-counts {:completed 9 :failed 1 :total 10}}
+           m)))
+  (testing "optional fields are absent when unset"
+    (let [m (batch->map (-> (com.openai.models.batches.Batch/builder)
+                            (.id "batch_2")
+                            (.completionWindow "24h")
+                            (.createdAt 124)
+                            (.endpoint "/v1/embeddings")
+                            (.inputFileId "file_in2")
+                            (.status com.openai.models.batches.Batch$Status/IN_PROGRESS)
+                            (.build)))]
+      (is (= :in-progress (:status m)))
+      (is (not (contains? m :output-file-id)))
+      (is (not (contains? m :request-counts))))))
+
+(deftest translates-batch-list-params
+  (let [^com.openai.models.batches.BatchListParams p
+        (->batch-list-params {:after "batch_0" :limit 5})]
+    (is (= "batch_0" (opt (.after p))))
+    (is (= 5 (opt (.limit p))))))
+
+(def ->file-create-params #'openai/->file-create-params)
+(def file->map #'openai/file->map)
+(def ->file-list-params #'openai/->file-list-params)
+
+(deftest translates-file-create-params
+  (let [tmp (java.io.File/createTempFile "openai-clj" ".jsonl")]
+    (spit tmp "{\"custom_id\":\"1\"}\n")
+    (try
+      (let [^com.openai.models.files.FileCreateParams p
+            (->file-create-params {:file (.toPath tmp) :purpose :batch})]
+        (is (= "batch" (.asString (.purpose p))))
+        (is (some? (.file p))))
+      (testing "string path, byte array, and input stream are accepted"
+        (let [^com.openai.models.files.FileCreateParams p1
+              (->file-create-params {:file (.getPath tmp) :purpose :batch})
+              ^com.openai.models.files.FileCreateParams p2
+              (->file-create-params {:file (.getBytes "data") :purpose :batch :filename "d.jsonl"})
+              ^com.openai.models.files.FileCreateParams p3
+              (->file-create-params {:file (java.io.ByteArrayInputStream. (.getBytes "data"))
+                                     :purpose :batch :filename "d.jsonl"})]
+          (is (some? (.file p1)))
+          (is (= "d.jsonl" (-> p2 ._file .filename opt)))
+          (is (= "d.jsonl" (-> p3 ._file .filename opt)))))
+      (testing "expires-after"
+        (let [^com.openai.models.files.FileCreateParams p
+              (->file-create-params {:file (.toPath tmp) :purpose :batch
+                                     :expires-after {:seconds 7200}})]
+          (is (= 7200 (-> p .expiresAfter opt .seconds)))))
+      (testing "missing keys throw"
+        (is (= {:openai/error :missing-key :key :file}
+               (ex-data-for #(->file-create-params {:purpose :batch}))))
+        (is (= {:openai/error :missing-key :key :purpose}
+               (ex-data-for #(->file-create-params {:file (.toPath tmp)})))))
+      (finally (.delete tmp)))))
+
+(deftest maps-file-object-to-clojure
+  (let [f (-> (com.openai.models.files.FileObject/builder)
+              (.id "file_1")
+              (.bytes 10)
+              (.createdAt 123)
+              (.filename "a.jsonl")
+              (.purpose com.openai.models.files.FileObject$Purpose/BATCH)
+              (.status com.openai.models.files.FileObject$Status/PROCESSED)
+              (.expiresAt 999)
+              (.build))
+        m (file->map f)]
+    (is (= {:id "file_1"
+            :bytes 10
+            :created-at 123
+            :filename "a.jsonl"
+            :purpose :batch
+            :status :processed
+            :expires-at 999}
+           m)))
+  (testing "expires-at absent when unset"
+    (is (not (contains? (file->map (-> (com.openai.models.files.FileObject/builder)
+                                       (.id "f") (.bytes 1) (.createdAt 1)
+                                       (.filename "x")
+                                       (.purpose com.openai.models.files.FileObject$Purpose/ASSISTANTS)
+                                       (.status com.openai.models.files.FileObject$Status/UPLOADED)
+                                       (.build)))
+                        :expires-at)))))
+
+(deftest translates-file-list-params
+  (let [^com.openai.models.files.FileListParams p
+        (->file-list-params {:purpose "batch" :order :desc :after "file_0" :limit 3})]
+    (is (= "batch" (opt (.purpose p))))
+    (is (= "desc" (.asString (opt (.order p)))))
+    (is (= "file_0" (opt (.after p))))
+    (is (= 3 (opt (.limit p))))))

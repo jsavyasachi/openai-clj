@@ -7,7 +7,7 @@
   (:import (com.openai.client OpenAIClient)
            (com.openai.client.okhttp OpenAIOkHttpClient
                                       OpenAIOkHttpClient$Builder)
-           (com.openai.core JsonValue)
+           (com.openai.core JsonValue MultipartField)
            (com.openai.core.http StreamResponse)
            (com.openai.errors BadRequestException
                               InternalServerException
@@ -24,10 +24,39 @@
            (com.openai.models ComparisonFilter
                               ComparisonFilter$Builder
                               ComparisonFilter$Type
+                              CompoundFilter
+                              CompoundFilter$Builder
+                              CompoundFilter$Type
                               Reasoning
                               Reasoning$Builder
                               ReasoningEffort
                               ResponsesModel)
+           (com.openai.models.batches Batch
+                                      Batch$Status
+                                      BatchCancelParams
+                                      BatchCreateParams
+                                      BatchCreateParams$Builder
+                                      BatchCreateParams$CompletionWindow
+                                      BatchCreateParams$Endpoint
+                                      BatchCreateParams$Metadata
+                                      BatchCreateParams$Metadata$Builder
+                                      BatchCreateParams$OutputExpiresAfter
+                                      BatchCreateParams$OutputExpiresAfter$Builder
+                                      BatchListPage
+                                      BatchListParams
+                                      BatchListParams$Builder
+                                      BatchRequestCounts)
+           (com.openai.models.files FileCreateParams
+                                    FileCreateParams$Builder
+                                    FileCreateParams$ExpiresAfter
+                                    FileCreateParams$ExpiresAfter$Builder
+                                    FileDeleted
+                                    FileListPage
+                                    FileListParams
+                                    FileListParams$Builder
+                                    FileListParams$Order
+                                    FileObject
+                                    FilePurpose)
            (com.openai.azure AzureOpenAIServiceVersion)
            (com.openai.models.embeddings CreateEmbeddingResponse
                                          CreateEmbeddingResponse$Usage
@@ -154,7 +183,9 @@
                                                       InputTokenCountParams$Builder
                                                       InputTokenCountParams$Truncation
                                                       InputTokenCountResponse)
-           (com.openai.services.blocking EmbeddingService
+           (com.openai.services.blocking BatchService
+                                         EmbeddingService
+                                         FileService
                                          ModelService
                                          ResponseService)
            (com.openai.services.blocking.responses InputItemService
@@ -403,8 +434,28 @@
       :else (.value b ^String (str value)))
     (.build b)))
 
+(defn- filter->plain
+  "A filter map as plain JSON-shaped data, for nesting a compound filter
+  inside another compound filter (the SDK models only one level natively)."
+  [{:keys [type key value filters]}]
+  (if filters
+    {"type" (name type) "filters" (mapv filter->plain filters)}
+    {"type" (name type) "key" key "value" value}))
+
+(defn- ->compound-filter ^CompoundFilter [{:keys [type filters]}]
+  (when-not type (missing-key! :type))
+  (let [^CompoundFilter$Builder b (CompoundFilter/builder)]
+    (.type b (CompoundFilter$Type/of (name type)))
+    (doseq [f filters]
+      (if (:filters f)
+        (.addFilter b (JsonValue/from (filter->plain f)))
+        (.addFilter b (->comparison-filter f))))
+    (.build b)))
+
 (defn- ->file-search-filters ^FileSearchTool$Filters [filters]
-  (FileSearchTool$Filters/ofComparisonFilter (->comparison-filter filters)))
+  (if (:filters filters)
+    (FileSearchTool$Filters/ofCompoundFilter (->compound-filter filters))
+    (FileSearchTool$Filters/ofComparisonFilter (->comparison-filter filters))))
 
 (defn- ->ranking-options ^FileSearchTool$RankingOptions [{:keys [ranker score-threshold]}]
   (let [^FileSearchTool$RankingOptions$Builder b (FileSearchTool$RankingOptions/builder)]
@@ -994,3 +1045,197 @@
        (.compact svc (-> (com.openai.models.responses.ResponseCompactParams/builder)
                          (.previousResponseId response-id)
                          (.build)))))))
+
+;; Files
+
+(defn- ->file-purpose ^FilePurpose [purpose]
+  (FilePurpose/of (enum-name purpose)))
+
+(defn- ->file-expires-after ^FileCreateParams$ExpiresAfter [{:keys [seconds]}]
+  (when-not seconds (missing-key! :seconds))
+  (let [^FileCreateParams$ExpiresAfter$Builder b (FileCreateParams$ExpiresAfter/builder)]
+    (.anchor b (JsonValue/from "created_at"))
+    (.seconds b (long seconds))
+    (.build b)))
+
+(defn- ->file-input-stream ^java.io.InputStream [file]
+  (cond
+    (instance? java.io.InputStream file) file
+    (bytes? file) (java.io.ByteArrayInputStream. ^bytes file)
+    :else (throw (ex-info (str "Unsupported :file type " (class file))
+                          {:openai/error :unsupported-file-type :class (class file)}))))
+
+(defn- ->file-create-params ^FileCreateParams
+  [{:keys [file purpose filename expires-after]}]
+  (when-not file (missing-key! :file))
+  (when-not purpose (missing-key! :purpose))
+  (let [^FileCreateParams$Builder b (FileCreateParams/builder)]
+    (cond
+      (instance? java.nio.file.Path file) (.file b ^java.nio.file.Path file)
+      (string? file) (.file b (.toPath (java.io.File. ^String file)))
+      filename (.file b (-> (MultipartField/builder)
+                            (.value (->file-input-stream file))
+                            (.filename ^String filename)
+                            (.build)))
+      :else (.file b (->file-input-stream file)))
+    (.purpose b (->file-purpose purpose))
+    (when expires-after (.expiresAfter b (->file-expires-after expires-after)))
+    (.build b)))
+
+(defn- file->map [^FileObject f]
+  (cond-> {:id (.id f)
+           :bytes (.bytes f)
+           :created-at (.createdAt f)
+           :filename (.filename f)
+           :purpose (->keyword (.asString (.purpose f)))
+           :status (->keyword (.asString (.status f)))}
+    (.isPresent (.expiresAt f)) (assoc :expires-at (.get (.expiresAt f)))
+    (.isPresent (.statusDetails f)) (assoc :status-details (.get (.statusDetails f)))))
+
+(defn- ->file-list-params ^FileListParams [{:keys [purpose order after limit]}]
+  (let [^FileListParams$Builder b (FileListParams/builder)]
+    (when purpose (.purpose b ^String (name purpose)))
+    (when order (.order b (FileListParams$Order/of (name order))))
+    (when after (.after b ^String after))
+    (when limit (.limit b (long limit)))
+    (.build b)))
+
+(defn upload-file
+  "Upload a file. `:file` (required) is a `java.nio.file.Path`, a string path,
+  a byte array, or an `InputStream`; `:purpose` (required) is e.g. `:batch`,
+  `:assistants`, `:fine-tune`, `:vision`, `:user-data`, or `:evals`.
+  Optional: `:filename` (used with byte-array/stream input) and
+  `:expires-after {:seconds n}` (anchored to file creation time).
+
+  Returns `{:id :bytes :created-at :filename :purpose :status}` plus
+  `:expires-at`/`:status-details` when present."
+  [^OpenAIClient client req]
+  (with-api-errors
+    (let [^FileService svc (.files client)]
+      (file->map (.create svc (->file-create-params req))))))
+
+(defn get-file
+  "Retrieve one file's metadata by id as a file map."
+  [^OpenAIClient client ^String file-id]
+  (with-api-errors
+    (let [^FileService svc (.files client)]
+      (file->map (.retrieve svc file-id)))))
+
+(defn file-content
+  "Download a file's content by id and return it as a byte array."
+  ^bytes [^OpenAIClient client ^String file-id]
+  (with-api-errors
+    (let [^FileService svc (.files client)]
+      (with-open [r (.content svc file-id)]
+        (.readAllBytes (.body r))))))
+
+(defn list-files
+  "List files as a vector of file maps. Optional keys: `:purpose`, `:order`
+  (`:asc`/`:desc`), `:after`, and `:limit`. Pages are followed automatically."
+  ([^OpenAIClient client] (list-files client {}))
+  ([^OpenAIClient client opts]
+   (with-api-errors
+     (let [^FileService svc (.files client)
+           ^FileListPage p (.list svc (->file-list-params opts))]
+       (mapv file->map (.autoPager p))))))
+
+(defn delete-file
+  "Delete a file by id. Returns `{:id \"...\" :deleted true|false}`."
+  [^OpenAIClient client ^String file-id]
+  (with-api-errors
+    (let [^FileService svc (.files client)
+          ^FileDeleted d (.delete svc file-id)]
+      {:id (.id d) :deleted (.deleted d)})))
+
+;; Batches
+
+(defn- ->batch-metadata ^BatchCreateParams$Metadata [m]
+  (let [^BatchCreateParams$Metadata$Builder b (BatchCreateParams$Metadata/builder)]
+    (doseq [[k v] (walk/stringify-keys m)]
+      (.putAdditionalProperty b ^String k (JsonValue/from (str v))))
+    (.build b)))
+
+(defn- ->output-expires-after ^BatchCreateParams$OutputExpiresAfter [{:keys [seconds]}]
+  (when-not seconds (missing-key! :seconds))
+  (let [^BatchCreateParams$OutputExpiresAfter$Builder b
+        (BatchCreateParams$OutputExpiresAfter/builder)]
+    (.anchor b (JsonValue/from "created_at"))
+    (.seconds b (long seconds))
+    (.build b)))
+
+(defn- ->batch-create-params ^BatchCreateParams
+  [{:keys [input-file-id endpoint completion-window metadata output-expires-after]}]
+  (when-not input-file-id (missing-key! :input-file-id))
+  (when-not endpoint (missing-key! :endpoint))
+  (let [^BatchCreateParams$Builder b (BatchCreateParams/builder)]
+    (.inputFileId b ^String input-file-id)
+    (.endpoint b (BatchCreateParams$Endpoint/of endpoint))
+    (.completionWindow b (BatchCreateParams$CompletionWindow/of (or completion-window "24h")))
+    (when metadata (.metadata b (->batch-metadata metadata)))
+    (when output-expires-after
+      (.outputExpiresAfter b (->output-expires-after output-expires-after)))
+    (.build b)))
+
+(defn- batch->map [^Batch b]
+  (cond-> {:id (.id b)
+           :status (->keyword (.asString (.status b)))
+           :endpoint (.endpoint b)
+           :input-file-id (.inputFileId b)
+           :completion-window (.completionWindow b)
+           :created-at (.createdAt b)}
+    (.isPresent (.outputFileId b)) (assoc :output-file-id (.get (.outputFileId b)))
+    (.isPresent (.errorFileId b)) (assoc :error-file-id (.get (.errorFileId b)))
+    (.isPresent (.model b)) (assoc :model (.get (.model b)))
+    (.isPresent (.completedAt b)) (assoc :completed-at (.get (.completedAt b)))
+    (.isPresent (.failedAt b)) (assoc :failed-at (.get (.failedAt b)))
+    (.isPresent (.expiresAt b)) (assoc :expires-at (.get (.expiresAt b)))
+    (.isPresent (.requestCounts b))
+    (assoc :request-counts
+           (let [^BatchRequestCounts c (.get (.requestCounts b))]
+             {:completed (.completed c) :failed (.failed c) :total (.total c)}))))
+
+(defn- ->batch-list-params ^BatchListParams [{:keys [after limit]}]
+  (let [^BatchListParams$Builder b (BatchListParams/builder)]
+    (when after (.after b ^String after))
+    (when limit (.limit b (long limit)))
+    (.build b)))
+
+(defn create-batch
+  "Create a batch job. Required: `:input-file-id` (an uploaded `:batch`-purpose
+  JSONL file) and `:endpoint` (the API path string the batch targets, e.g.
+  \"/v1/responses\", \"/v1/chat/completions\", or \"/v1/embeddings\").
+  Optional: `:completion-window` (defaults to \"24h\"), `:metadata`, and
+  `:output-expires-after {:seconds n}`.
+
+  Returns `{:id :status :endpoint :input-file-id :completion-window
+  :created-at}` plus `:output-file-id`, `:error-file-id`, `:model`,
+  `:completed-at`, `:failed-at`, `:expires-at`, or `:request-counts
+  {:completed :failed :total}` when present."
+  [^OpenAIClient client req]
+  (with-api-errors
+    (let [^BatchService svc (.batches client)]
+      (batch->map (.create svc (->batch-create-params req))))))
+
+(defn get-batch
+  "Retrieve one batch by id as a batch map."
+  [^OpenAIClient client ^String batch-id]
+  (with-api-errors
+    (let [^BatchService svc (.batches client)]
+      (batch->map (.retrieve svc batch-id)))))
+
+(defn cancel-batch
+  "Cancel an in-progress batch by id and return the resulting batch map."
+  [^OpenAIClient client ^String batch-id]
+  (with-api-errors
+    (let [^BatchService svc (.batches client)]
+      (batch->map (.cancel svc batch-id)))))
+
+(defn list-batches
+  "List batches as a vector of batch maps. Optional keys: `:after` and
+  `:limit`. Pages are followed automatically."
+  ([^OpenAIClient client] (list-batches client {}))
+  ([^OpenAIClient client opts]
+   (with-api-errors
+     (let [^BatchService svc (.batches client)
+           ^BatchListPage p (.list svc (->batch-list-params opts))]
+       (mapv batch->map (.autoPager p))))))
