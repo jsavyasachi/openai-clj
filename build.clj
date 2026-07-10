@@ -8,7 +8,7 @@
             [deps-deploy.deps-deploy :as dd]))
 
 (def lib 'net.clojars.savya/openai-clj)
-(def version "0.5.0")
+(def version "0.5.1")
 (def class-dir "target/classes")
 (def basis (delay (b/create-basis {:project "deps.edn"})))
 (def jar-file (format "target/%s-%s.jar" (name lib) version))
@@ -24,8 +24,12 @@
                 :basis @basis
                 :src-dirs ["src"]
                 :scm {:url "https://github.com/jsavyasachi/openai-clj"
+                      :connection "scm:git:https://github.com/jsavyasachi/openai-clj.git"
+                      :developerConnection "scm:git:ssh://git@github.com/jsavyasachi/openai-clj.git"
                       :tag (str "v" version)}
-                :pom-data [[:licenses
+                :pom-data [[:description "Idiomatic Clojure wrapper over the official OpenAI Java SDK."]
+                           [:url "https://github.com/jsavyasachi/openai-clj"]
+                           [:licenses
                             [:license
                              [:name "Eclipse Public License 2.0"]
                              [:url "https://www.eclipse.org/legal/epl-2.0/"]
