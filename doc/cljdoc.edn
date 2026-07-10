@@ -1,0 +1,9 @@
+{:cljdoc.doc/tree
+ [["Readme" {:file "README.md"}]
+  ["Tools" {:file "doc/tools.md"}]
+  ["Streaming" {:file "doc/streaming.md"}]
+  ["Embeddings Files and Batches" {:file "doc/embeddings-files-batches.md"}]
+  ["Azure OpenAI" {:file "doc/azure.md"}]
+  ["Responses and Errors" {:file "doc/responses-and-errors.md"}]
+  ["Migrating" {:file "doc/migrating.md"}]
+  ]}
