@@ -1,25 +1,13 @@
 (ns openai.core
   "Idiomatic Clojure wrapper over the official OpenAI Java SDK
   (`com.openai/openai-java`), focused on the Responses API."
-  (:require [clojure.string :as str]
-            [clojure.walk :as walk]
-            [jsonista.core :as json])
+  (:require [clojure.walk :as walk]
+            [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)
            (com.openai.client.okhttp OpenAIOkHttpClient
                                       OpenAIOkHttpClient$Builder)
            (com.openai.core JsonValue MultipartField)
            (com.openai.core.http StreamResponse)
-           (com.openai.errors BadRequestException
-                              InternalServerException
-                              NotFoundException
-                              OpenAIException
-                              OpenAIIoException
-                              OpenAIServiceException
-                              PermissionDeniedException
-                              RateLimitException
-                              UnauthorizedException
-                              UnexpectedStatusCodeException
-                              UnprocessableEntityException)
            (java.time Duration)
            (com.openai.models ComparisonFilter
                               ComparisonFilter$Builder
@@ -290,43 +278,8 @@
        (.azureServiceVersion b (AzureOpenAIServiceVersion/fromString ^String azure-service-version)))
      (.build b))))
 
-(defn- service-error-type [e]
-  (condp instance? e
-    BadRequestException :bad-request
-    UnauthorizedException :unauthorized
-    PermissionDeniedException :permission-denied
-    NotFoundException :not-found
-    UnprocessableEntityException :unprocessable-entity
-    RateLimitException :rate-limit
-    InternalServerException :internal-server
-    UnexpectedStatusCodeException :unexpected-status
-    :api-error))
-
-(defn- throw-normalized!
-  "Rethrow an SDK exception: service errors and I/O errors become ex-info
-  keyed `:openai/error` with the original as cause; anything else propagates
-  unchanged."
-  [^Throwable e]
-  (cond
-    (instance? OpenAIServiceException e)
-    (throw (ex-info (or (.getMessage e) "OpenAI API error")
-                    {:openai/error :api-error
-                     :status (.statusCode ^OpenAIServiceException e)
-                     :error-type (service-error-type e)}
-                    e))
-    (instance? OpenAIIoException e)
-    (throw (ex-info (or (.getMessage e) "OpenAI I/O error")
-                    {:openai/error :io-error}
-                    e))
-    :else (throw e)))
-
-(defmacro ^:private with-api-errors [& body]
-  `(try ~@body
-        (catch OpenAIException e# (throw-normalized! e#))))
-
-(defn- missing-key! [k]
-  (throw (ex-info (str "Missing required key " k)
-                  {:openai/error :missing-key :key k})))
+(defn- throw-normalized! [^Throwable e]
+  (impl/throw-normalized! e))
 
 (defn- ->metadata ^ResponseCreateParams$Metadata [m]
   (let [^ResponseCreateParams$Metadata$Builder b (ResponseCreateParams$Metadata/builder)]
@@ -337,27 +290,17 @@
 (defn- ->role ^EasyInputMessage$Role [role]
   (EasyInputMessage$Role/of (name role)))
 
-(defn- enum-name [k]
-  (str/replace (name k) "-" "_"))
-
-(def ^:private json-mapper (json/object-mapper {:decode-key-fn true}))
-
-(defn- encode-output [x]
-  (if (string? x)
-    x
-    (json/write-value-as-string x)))
-
 (defn- ->function-call-output ^ResponseInputItem [{:keys [call-id output]}]
   (let [^ResponseInputItem$FunctionCallOutput$Builder b
         (ResponseInputItem$FunctionCallOutput/builder)]
-    (when-not call-id (missing-key! :call-id))
+    (when-not call-id (impl/missing-key! :call-id))
     (.callId b ^String call-id)
-    (.output b ^String (encode-output output))
+    (.output b ^String (impl/encode-output output))
     (ResponseInputItem/ofFunctionCallOutput (.build b))))
 
 (defn- ->input-text ^ResponseInputContent [{:keys [text]}]
   (let [^ResponseInputText$Builder b (ResponseInputText/builder)]
-    (when-not text (missing-key! :text))
+    (when-not text (impl/missing-key! :text))
     (.text b ^String text)
     (ResponseInputContent/ofInputText (.build b))))
 
@@ -365,7 +308,7 @@
   (let [^ResponseInputImage$Builder b (ResponseInputImage/builder)]
     (when image-url (.imageUrl b ^String image-url))
     (when file-id (.fileId b ^String file-id))
-    (when detail (.detail b (ResponseInputImage$Detail/of (enum-name detail))))
+    (when detail (.detail b (ResponseInputImage$Detail/of (impl/enum-name detail))))
     (ResponseInputContent/ofInputImage (.build b))))
 
 (defn- ->input-file ^ResponseInputContent [{:keys [file-id filename file-data]}]
@@ -387,8 +330,8 @@
   (if (= :function-call-output (keyword type))
     (->function-call-output item)
     (let [^EasyInputMessage$Builder b (EasyInputMessage/builder)]
-      (when-not role (missing-key! :role))
-      (when-not content (missing-key! :content))
+      (when-not role (impl/missing-key! :role))
+      (when-not content (impl/missing-key! :content))
       (.role b (->role role))
       (if (string? content)
         (.content b ^String content)
@@ -413,16 +356,6 @@
       (.putAdditionalProperty b ^String k (JsonValue/from v)))
     (.build b)))
 
-(defn- ->json-schema-properties [m]
-  (into {}
-        (map (fn [[k v]] [k (JsonValue/from v)]))
-        (walk/stringify-keys m)))
-
-(defn- ->json-value-properties [m]
-  (into {}
-        (map (fn [[k v]] [k (JsonValue/from v)]))
-        (walk/stringify-keys m)))
-
 (defn- ->text-config ^ResponseTextConfig [json-schema verbosity]
   (let [^ResponseTextConfig$Builder tb (ResponseTextConfig/builder)]
     (when json-schema
@@ -431,9 +364,9 @@
             (ResponseFormatTextJsonSchemaConfig$Schema/builder)
             ^ResponseFormatTextJsonSchemaConfig$Builder fb
             (ResponseFormatTextJsonSchemaConfig/builder)]
-        (when-not name (missing-key! :name))
-        (when-not schema (missing-key! :schema))
-        (.additionalProperties sb ^java.util.Map (->json-schema-properties schema))
+        (when-not name (impl/missing-key! :name))
+        (when-not schema (impl/missing-key! :schema))
+        (.additionalProperties sb ^java.util.Map (impl/->json-schema-properties schema))
         (.name fb ^String name)
         (.schema fb (.build sb))
         (when description (.description fb ^String description))
@@ -456,7 +389,7 @@
 
 (defn- ->function-tool ^FunctionTool [{:keys [name description parameters strict]}]
   (let [^FunctionTool$Builder b (FunctionTool/builder)]
-    (when-not name (missing-key! :name))
+    (when-not name (impl/missing-key! :name))
     (.name b ^String name)
     (when description (.description b ^String description))
     (when parameters (.parameters b (->function-parameters parameters)))
@@ -500,8 +433,8 @@
 
 (defn- ->comparison-filter ^ComparisonFilter [{:keys [type key value]}]
   (let [^ComparisonFilter$Builder b (ComparisonFilter/builder)]
-    (when-not type (missing-key! :type))
-    (when-not key (missing-key! :key))
+    (when-not type (impl/missing-key! :type))
+    (when-not key (impl/missing-key! :key))
     (.type b (ComparisonFilter$Type/of (name type)))
     (.key b ^String key)
     (cond
@@ -520,7 +453,7 @@
     {"type" (name type) "key" key "value" value}))
 
 (defn- ->compound-filter ^CompoundFilter [{:keys [type filters]}]
-  (when-not type (missing-key! :type))
+  (when-not type (impl/missing-key! :type))
   (let [^CompoundFilter$Builder b (CompoundFilter/builder)]
     (.type b (CompoundFilter$Type/of (name type)))
     (doseq [f filters]
@@ -543,7 +476,7 @@
 (defn- ->file-search-tool ^FileSearchTool
   [{:keys [vector-store-ids max-num-results filters ranking-options]}]
   (let [^FileSearchTool$Builder b (FileSearchTool/builder)]
-    (when-not (seq vector-store-ids) (missing-key! :vector-store-ids))
+    (when-not (seq vector-store-ids) (impl/missing-key! :vector-store-ids))
     (.vectorStoreIds b ^java.util.List (vec vector-store-ids))
     (when max-num-results (.maxNumResults b (long max-num-results)))
     (when filters (.filters b (->file-search-filters filters)))
@@ -552,13 +485,13 @@
 
 (defn- ->mcp-headers ^Tool$Mcp$Headers [headers]
   (let [^Tool$Mcp$Headers$Builder b (Tool$Mcp$Headers/builder)]
-    (.additionalProperties b ^java.util.Map (->json-value-properties headers))
+    (.additionalProperties b ^java.util.Map (impl/->json-value-properties headers))
     (.build b)))
 
 (defn- ->mcp-tool ^Tool$Mcp
   [{:keys [server-label server-url allowed-tools require-approval headers]}]
   (let [^Tool$Mcp$Builder b (Tool$Mcp/builder)]
-    (when-not server-label (missing-key! :server-label))
+    (when-not server-label (impl/missing-key! :server-label))
     (.serverLabel b ^String server-label)
     (when server-url (.serverUrl b ^String server-url))
     (when (seq allowed-tools) (.allowedToolsOfMcp b ^java.util.List (vec allowed-tools)))
@@ -579,7 +512,7 @@
 
 (defn- ->tool-choice-function ^ToolChoiceFunction [{:keys [name]}]
   (let [^ToolChoiceFunction$Builder b (ToolChoiceFunction/builder)]
-    (when-not name (missing-key! :name))
+    (when-not name (impl/missing-key! :name))
     (.name b ^String name)
     (.build b)))
 
@@ -608,8 +541,8 @@
            parallel-tool-calls background include truncation prompt-cache-key
            safety-identifier service-tier max-tool-calls top-logprobs
            json-schema verbosity conversation stream-options moderation]}]
-  (when-not model (missing-key! :model))
-  (when-not input (missing-key! :input))
+  (when-not model (impl/missing-key! :model))
+  (when-not input (impl/missing-key! :input))
   (let [^ResponseCreateParams$Builder b (ResponseCreateParams/builder)]
     (.model b ^String model)
     (.input b (->input input))
@@ -620,11 +553,11 @@
     (when top-p (.topP b (double top-p)))
     (when top-logprobs (.topLogprobs b (long top-logprobs)))
     (when (some? background) (.background b (boolean background)))
-    (doseq [i include] (.addInclude b (ResponseIncludable/of (enum-name i))))
-    (when truncation (.truncation b (ResponseCreateParams$Truncation/of (enum-name truncation))))
+    (doseq [i include] (.addInclude b (ResponseIncludable/of (impl/enum-name i))))
+    (when truncation (.truncation b (ResponseCreateParams$Truncation/of (impl/enum-name truncation))))
     (when prompt-cache-key (.promptCacheKey b ^String prompt-cache-key))
     (when safety-identifier (.safetyIdentifier b ^String safety-identifier))
-    (when service-tier (.serviceTier b (ResponseCreateParams$ServiceTier/of (enum-name service-tier))))
+    (when service-tier (.serviceTier b (ResponseCreateParams$ServiceTier/of (impl/enum-name service-tier))))
     (when metadata (.metadata b (->metadata metadata)))
     (when previous-response-id (.previousResponseId b ^String previous-response-id))
     (when (some? store) (.store b (boolean store)))
@@ -663,21 +596,8 @@
                            :type (:type tool-choice)})))
         (.toolChoice b (->tool-choice-option tool-choice))))
     (when (some? parallel-tool-calls) (.parallelToolCalls b (boolean parallel-tool-calls)))
-    (when truncation (.truncation b (InputTokenCountParams$Truncation/of (enum-name truncation))))
+    (when truncation (.truncation b (InputTokenCountParams$Truncation/of (impl/enum-name truncation))))
     (.build b)))
-
-(defn- ->keyword [s]
-  (-> s str str/lower-case (str/replace "_" "-") keyword))
-
-(defn- parse-arguments [^String s]
-  (try
-    (json/read-value s json-mapper)
-    (catch Exception _
-      s)))
-
-(defn- opt-get [o]
-  (when (.isPresent ^java.util.Optional o)
-    (.get ^java.util.Optional o)))
 
 (defn- annotation->map [^ResponseOutputText$Annotation a]
   (cond
@@ -737,28 +657,28 @@
   (cond-> {:type :function-call
            :name (.name f)
            :call-id (.callId f)
-           :arguments (parse-arguments (.arguments f))}
+           :arguments (impl/parse-arguments (.arguments f))}
     (.isPresent (.id f)) (assoc :id (.get (.id f)))))
 
 (defn- reasoning->map [^ResponseReasoningItem r]
   (cond-> {:type :reasoning
            :id (.id r)}
-    (.isPresent (.status r)) (assoc :status (->keyword (.asString ^ResponseReasoningItem$Status (.get (.status r)))))
+    (.isPresent (.status r)) (assoc :status (impl/->keyword (.asString ^ResponseReasoningItem$Status (.get (.status r)))))
     (seq (.summary r)) (assoc :summary (mapv #(.text ^ResponseReasoningItem$Summary %) (.summary r)))))
 
 (defn- web-search-call->map [^ResponseFunctionWebSearch c]
-  {:type :web-search-call :status (->keyword (.asString (.status c)))})
+  {:type :web-search-call :status (impl/->keyword (.asString (.status c)))})
 
 (defn- file-search-call->map [^com.openai.models.responses.ResponseFileSearchToolCall c]
-  {:type :file-search-call :status (->keyword (.asString (.status c)))})
+  {:type :file-search-call :status (impl/->keyword (.asString (.status c)))})
 
 (defn- code-interpreter-call->map [^com.openai.models.responses.ResponseCodeInterpreterToolCall c]
-  {:type :code-interpreter-call :status (->keyword (.asString (.status c)))})
+  {:type :code-interpreter-call :status (impl/->keyword (.asString (.status c)))})
 
 (defn- image-generation-call->map [^ResponseOutputItem$ImageGenerationCall c]
   (cond-> {:type :image-generation-call
            :id (.id c)
-           :status (->keyword (.asString (.status c)))}
+           :status (impl/->keyword (.asString (.status c)))}
     (.isPresent (.result c)) (assoc :result (.get (.result c)))))
 
 (defn- mcp-call->map [^ResponseOutputItem$McpCall c]
@@ -767,7 +687,7 @@
            :name (.name c)
            :server-label (.serverLabel c)
     :arguments (.arguments c)}
-    (.isPresent (.status c)) (assoc :status (->keyword (.asString ^ResponseOutputItem$McpCall$Status (.get (.status c)))))
+    (.isPresent (.status c)) (assoc :status (impl/->keyword (.asString ^ResponseOutputItem$McpCall$Status (.get (.status c)))))
     (.isPresent (.output c)) (assoc :output (.get (.output c)))
     (.isPresent (.error c)) (assoc :error (.get (.error c)))))
 
@@ -794,13 +714,13 @@
 (defn- local-shell-call->map [^ResponseOutputItem$LocalShellCall c]
   {:type :local-shell-call
    :id (.id c)
-   :status (->keyword (.asString (.status c)))
+   :status (impl/->keyword (.asString (.status c)))
    :call-id (.callId c)})
 
 (defn- computer-call->map [^com.openai.models.responses.ResponseComputerToolCall c]
   {:type :computer-call
    :id (.id c)
-   :status (->keyword (.asString (.status c)))})
+   :status (impl/->keyword (.asString (.status c)))})
 
 (defn- output-item->map [^ResponseOutputItem item]
   (cond
@@ -821,9 +741,9 @@
 
 (defn- input-message-item->map [^ResponseInputMessageItem m]
   (cond-> {:type :message
-           :role (->keyword (.asString (.role m)))
+           :role (impl/->keyword (.asString (.role m)))
            :id (.id m)}
-    (.isPresent (.status m)) (assoc :status (->keyword (.asString ^com.openai.models.responses.ResponseInputMessageItem$Status (.get (.status m)))))))
+    (.isPresent (.status m)) (assoc :status (impl/->keyword (.asString ^com.openai.models.responses.ResponseInputMessageItem$Status (.get (.status m)))))))
 
 (defn- response-item->map [^ResponseItem item]
   (cond
@@ -834,7 +754,7 @@
                                    {:type :function-call-output
                                     :id (.id c)
                                     :call-id (.callId c)
-                                    :status (->keyword (.asString (.status c)))
+                                    :status (impl/->keyword (.asString (.status c)))
                                     :output (str (.output c))})
     :else {:type :unknown}))
 
@@ -844,12 +764,12 @@
    :total-tokens (.totalTokens u)})
 
 (defn- error->map [^ResponseError e]
-  {:code (->keyword (.asString (.code e)))
+  {:code (impl/->keyword (.asString (.code e)))
    :message (.message e)})
 
 (defn- incomplete-details->map [^Response$IncompleteDetails d]
   (cond-> {}
-    (.isPresent (.reason d)) (assoc :reason (->keyword (.asString ^com.openai.models.responses.Response$IncompleteDetails$Reason (.get (.reason d)))))))
+    (.isPresent (.reason d)) (assoc :reason (impl/->keyword (.asString ^com.openai.models.responses.Response$IncompleteDetails$Reason (.get (.reason d)))))))
 
 (defn- output-text [items]
   (apply str
@@ -866,7 +786,7 @@
              :output items
              :text (output-text items)
              :created-at (.createdAt r)}
-      (.isPresent (.status r)) (assoc :status (->keyword (.asString ^ResponseStatus (.get (.status r)))))
+      (.isPresent (.status r)) (assoc :status (impl/->keyword (.asString ^ResponseStatus (.get (.status r)))))
       (.isPresent (.usage r)) (assoc :usage (usage->map (.get (.usage r))))
       (.isPresent (.error r)) (assoc :error (error->map (.get (.error r))))
       (.isPresent (.incompleteDetails r)) (assoc :incomplete-details (incomplete-details->map (.get (.incompleteDetails r))))
@@ -904,7 +824,7 @@
   `:web-search-call`, `:file-search-call`, `:code-interpreter-call`, or
   `:unknown`."
   [^OpenAIClient client req]
-  (with-api-errors
+  (impl/with-api-errors
     (response->map (.create (.responses client) (->params req)))))
 
 (defn count-input-tokens
@@ -912,7 +832,7 @@
   style as `create-response`; fields unsupported by the SDK's input token count
   endpoint are ignored. Returns `{:input-tokens n}`."
   [^OpenAIClient client req]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^ResponseService svc (.responses client)
           ^InputTokenService tokens (.inputTokens svc)
           ^InputTokenCountResponse r (.count tokens (->input-token-count-params req))]
@@ -925,8 +845,8 @@
 
 (defn- ->embedding-params ^EmbeddingCreateParams
   [{:keys [model input dimensions user]}]
-  (when-not model (missing-key! :model))
-  (when-not input (missing-key! :input))
+  (when-not model (impl/missing-key! :model))
+  (when-not input (impl/missing-key! :input))
   (let [^EmbeddingCreateParams$Builder b (EmbeddingCreateParams/builder)]
     (.model b ^String model)
     (if (string? input)
@@ -954,7 +874,7 @@
   {:prompt-tokens n :total-tokens n}}`; `:embeddings` is ordered to match the
   input order (one vector even for string input)."
   [^OpenAIClient client req]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^EmbeddingService svc (.embeddings client)]
       (embedding-response->map (.create svc (->embedding-params req))))))
 
@@ -962,15 +882,15 @@
   "List available models as a vector of `{:id :created :owned-by}` maps. Pages
   are followed automatically."
   [^OpenAIClient client]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^ModelService svc (.models client)
           ^ModelListPage p (.list svc)]
-      (mapv model->map (.autoPager p)))))
+      (mapv model->map (impl/all-pages p)))))
 
 (defn get-model
   "Retrieve one model by id as a `{:id :created :owned-by}` map."
   [^OpenAIClient client ^String model-id]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^ModelService svc (.models client)]
       (model->map (.retrieve svc model-id)))))
 
@@ -1052,7 +972,7 @@
   output text. Takes the same `req` map as `create-response`. The underlying
   HTTP stream is closed automatically."
   ^String [^OpenAIClient client req on-event]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^ResponseService svc (.responses client)]
       (with-open [^StreamResponse sr (.createStreaming svc (->params req))]
         (drain-stream sr on-event)))))
@@ -1061,7 +981,7 @@
   "Resume streaming an existing background response id. Invokes `on-event` with
   normalized event maps and returns concatenated output text, matching `stream`."
   ^String [^OpenAIClient client ^String response-id on-event]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^ResponseService svc (.responses client)]
       (with-open [^StreamResponse sr (.retrieveStreaming svc response-id)]
         (drain-stream sr on-event)))))
@@ -1075,24 +995,24 @@
 
 (defn- ->chat-metadata ^ChatCompletionCreateParams$Metadata [m]
   (let [^ChatCompletionCreateParams$Metadata$Builder b (ChatCompletionCreateParams$Metadata/builder)]
-    (.additionalProperties b ^java.util.Map (->json-value-properties m))
+    (.additionalProperties b ^java.util.Map (impl/->json-value-properties m))
     (.build b)))
 
 (defn- ->chat-logit-bias ^ChatCompletionCreateParams$LogitBias [m]
   (let [^ChatCompletionCreateParams$LogitBias$Builder b (ChatCompletionCreateParams$LogitBias/builder)]
-    (.additionalProperties b ^java.util.Map (->json-value-properties m))
+    (.additionalProperties b ^java.util.Map (impl/->json-value-properties m))
     (.build b)))
 
 (defn- ->chat-content-part-text ^ChatCompletionContentPartText [{:keys [text]}]
   (let [^ChatCompletionContentPartText$Builder b (ChatCompletionContentPartText/builder)]
-    (when-not text (missing-key! :text))
+    (when-not text (impl/missing-key! :text))
     (.text b ^String text)
     (.build b)))
 
 (defn- ->chat-content-part-image ^ChatCompletionContentPartImage [{:keys [image-url detail]}]
   (let [^ChatCompletionContentPartImage$ImageUrl$Builder ub (ChatCompletionContentPartImage$ImageUrl/builder)
         ^ChatCompletionContentPartImage$Builder b (ChatCompletionContentPartImage/builder)]
-    (when-not image-url (missing-key! :image-url))
+    (when-not image-url (impl/missing-key! :image-url))
     (.url ub ^String image-url)
     (when detail (.detail ub (ChatCompletionContentPartImage$ImageUrl$Detail/of (name detail))))
     (.imageUrl b (.build ub))
@@ -1102,8 +1022,8 @@
   (let [^ChatCompletionContentPartInputAudio$InputAudio$Builder ab
         (ChatCompletionContentPartInputAudio$InputAudio/builder)
         ^ChatCompletionContentPartInputAudio$Builder b (ChatCompletionContentPartInputAudio/builder)]
-    (when-not data (missing-key! :data))
-    (when-not format (missing-key! :format))
+    (when-not data (impl/missing-key! :data))
+    (when-not format (impl/missing-key! :format))
     (.data ab ^String data)
     (.format ab (ChatCompletionContentPartInputAudio$InputAudio$Format/of (name format)))
     (.inputAudio b (.build ab))
@@ -1125,10 +1045,10 @@
           (ChatCompletionMessageFunctionToolCall$Function/builder)
           ^ChatCompletionMessageFunctionToolCall$Builder b
           (ChatCompletionMessageFunctionToolCall/builder)]
-      (when-not id (missing-key! :id))
-      (when-not name (missing-key! :name))
+      (when-not id (impl/missing-key! :id))
+      (when-not name (impl/missing-key! :name))
       (.name fb ^String name)
-      (.arguments fb ^String (encode-output arguments))
+      (.arguments fb ^String (impl/encode-output arguments))
       (.id b ^String id)
       (.type b (JsonValue/from "function"))
       (.function b (.build fb))
@@ -1138,7 +1058,7 @@
 
 (defn- ->chat-system-message ^ChatCompletionMessageParam [{:keys [content]}]
   (let [^ChatCompletionSystemMessageParam$Builder b (ChatCompletionSystemMessageParam/builder)]
-    (when-not content (missing-key! :content))
+    (when-not content (impl/missing-key! :content))
     (if (string? content)
       (.content b ^String content)
       (.contentOfArrayOfContentParts b ^java.util.List (mapv ->chat-content-part-text content)))
@@ -1146,7 +1066,7 @@
 
 (defn- ->chat-developer-message ^ChatCompletionMessageParam [{:keys [content]}]
   (let [^ChatCompletionDeveloperMessageParam$Builder b (ChatCompletionDeveloperMessageParam/builder)]
-    (when-not content (missing-key! :content))
+    (when-not content (impl/missing-key! :content))
     (if (string? content)
       (.content b ^String content)
       (.contentOfArrayOfContentParts b ^java.util.List (mapv ->chat-content-part-text content)))
@@ -1154,7 +1074,7 @@
 
 (defn- ->chat-user-message ^ChatCompletionMessageParam [{:keys [content]}]
   (let [^ChatCompletionUserMessageParam$Builder b (ChatCompletionUserMessageParam/builder)]
-    (when-not content (missing-key! :content))
+    (when-not content (impl/missing-key! :content))
     (if (string? content)
       (.content b ^String content)
       (.contentOfArrayOfContentParts b ^java.util.List (mapv ->chat-content-part content)))
@@ -1169,14 +1089,14 @@
 
 (defn- ->chat-tool-message ^ChatCompletionMessageParam [{:keys [tool-call-id content]}]
   (let [^ChatCompletionToolMessageParam$Builder b (ChatCompletionToolMessageParam/builder)]
-    (when-not tool-call-id (missing-key! :tool-call-id))
-    (when-not content (missing-key! :content))
+    (when-not tool-call-id (impl/missing-key! :tool-call-id))
+    (when-not content (impl/missing-key! :content))
     (.toolCallId b ^String tool-call-id)
     (.content b ^String content)
     (ChatCompletionMessageParam/ofTool (.build b))))
 
 (defn- ->chat-message ^ChatCompletionMessageParam [{:keys [role] :as m}]
-  (when-not role (missing-key! :role))
+  (when-not role (impl/missing-key! :role))
   (case (keyword role)
     :system (->chat-system-message m)
     :developer (->chat-developer-message m)
@@ -1194,7 +1114,7 @@
 
 (defn- ->chat-function-definition ^FunctionDefinition [{:keys [name description parameters strict]}]
   (let [^FunctionDefinition$Builder b (FunctionDefinition/builder)]
-    (when-not name (missing-key! :name))
+    (when-not name (impl/missing-key! :name))
     (.name b ^String name)
     (when description (.description b ^String description))
     (when parameters (.parameters b (->chat-function-parameters parameters)))
@@ -1220,7 +1140,7 @@
   (let [^ChatCompletionNamedToolChoice$Function$Builder fb
         (ChatCompletionNamedToolChoice$Function/builder)
         ^ChatCompletionNamedToolChoice$Builder b (ChatCompletionNamedToolChoice/builder)]
-    (when-not name (missing-key! :name))
+    (when-not name (impl/missing-key! :name))
     (.name fb ^String name)
     (.type b (JsonValue/from "function"))
     (.function b (.build fb))
@@ -1250,9 +1170,9 @@
           (ResponseFormatJsonSchema$JsonSchema/builder)
           ^ResponseFormatJsonSchema$Builder rb
           (ResponseFormatJsonSchema/builder)]
-      (when-not name (missing-key! :name))
-      (when-not schema (missing-key! :schema))
-      (.additionalProperties sb ^java.util.Map (->json-schema-properties schema))
+      (when-not name (impl/missing-key! :name))
+      (when-not schema (impl/missing-key! :schema))
+      (.additionalProperties sb ^java.util.Map (impl/->json-schema-properties schema))
       (.name jsb ^String name)
       (.schema jsb (.build sb))
       (when description (.description jsb ^String description))
@@ -1273,8 +1193,8 @@
            presence-penalty frequency-penalty logit-bias seed user metadata store
            service-tier parallel-tool-calls logprobs top-logprobs tools tool-choice
            response-format reasoning-effort stream-options]}]
-  (when-not model (missing-key! :model))
-  (when-not messages (missing-key! :messages))
+  (when-not model (impl/missing-key! :model))
+  (when-not messages (impl/missing-key! :messages))
   (let [^ChatCompletionCreateParams$Builder b (ChatCompletionCreateParams/builder)]
     (.model b ^String model)
     (.messages b ^java.util.List (mapv ->chat-message messages))
@@ -1294,7 +1214,7 @@
     (when user (.user b ^String user))
     (when metadata (.metadata b (->chat-metadata metadata)))
     (when (some? store) (.store b (boolean store)))
-    (when service-tier (.serviceTier b (ChatCompletionCreateParams$ServiceTier/of (enum-name service-tier))))
+    (when service-tier (.serviceTier b (ChatCompletionCreateParams$ServiceTier/of (impl/enum-name service-tier))))
     (when (some? parallel-tool-calls) (.parallelToolCalls b (boolean parallel-tool-calls)))
     (when (some? logprobs) (.logprobs b (boolean logprobs)))
     (when top-logprobs (.topLogprobs b (long top-logprobs)))
@@ -1317,18 +1237,18 @@
                       {:id (.id f)
                        :type :function
                        :function {:name (.name fnc)
-                                  :arguments (parse-arguments (.arguments fnc))}})
+                                  :arguments (impl/parse-arguments (.arguments fnc))}})
     :else {:type :unknown}))
 
 (defn- chat-message->map [^ChatCompletionMessage m]
-  (cond-> {:role (->keyword (.asStringOrThrow (._role m)))}
+  (cond-> {:role (impl/->keyword (.asStringOrThrow (._role m)))}
     (.isPresent (.content m)) (assoc :content (.get (.content m)))
     (.isPresent (.toolCalls m)) (assoc :tool-calls (mapv chat-message-tool-call->map (.get (.toolCalls m))))
     (.isPresent (.refusal m)) (assoc :refusal (.get (.refusal m)))))
 
 (defn- chat-choice->map [^ChatCompletion$Choice c]
   {:index (.index c)
-   :finish-reason (->keyword (.asString ^ChatCompletion$Choice$FinishReason (.finishReason c)))
+   :finish-reason (impl/->keyword (.asString ^ChatCompletion$Choice$FinishReason (.finishReason c)))
    :message (chat-message->map (.message c))})
 
 (defn- chat-output-text [choices]
@@ -1343,12 +1263,12 @@
              :choices choices
              :text (chat-output-text choices)}
       (.isPresent (.usage r)) (assoc :usage (completion-usage->map (.get (.usage r))))
-      (.isPresent (.serviceTier r)) (assoc :service-tier (->keyword (.asString ^ChatCompletion$ServiceTier (.get (.serviceTier r))))))))
+      (.isPresent (.serviceTier r)) (assoc :service-tier (impl/->keyword (.asString ^ChatCompletion$ServiceTier (.get (.serviceTier r))))))))
 
 (defn- chat-delta-tool-call->map [^ChatCompletionChunk$Choice$Delta$ToolCall c]
   (cond-> {:index (.index c)}
     (.isPresent (.id c)) (assoc :id (.get (.id c)))
-    (.isPresent (.type c)) (assoc :type (->keyword (.asString ^ChatCompletionChunk$Choice$Delta$ToolCall$Type (.get (.type c)))))
+    (.isPresent (.type c)) (assoc :type (impl/->keyword (.asString ^ChatCompletionChunk$Choice$Delta$ToolCall$Type (.get (.type c)))))
     (.isPresent (.function c)) (assoc :function
                                       (let [^ChatCompletionChunk$Choice$Delta$ToolCall$Function f
                                             (.get (.function c))]
@@ -1358,14 +1278,14 @@
 
 (defn- chat-delta->map [^ChatCompletionChunk$Choice$Delta d]
   (cond-> {}
-    (.isPresent (.role d)) (assoc :role (->keyword (.asString ^ChatCompletionChunk$Choice$Delta$Role (.get (.role d)))))
+    (.isPresent (.role d)) (assoc :role (impl/->keyword (.asString ^ChatCompletionChunk$Choice$Delta$Role (.get (.role d)))))
     (.isPresent (.content d)) (assoc :content (.get (.content d)))
     (.isPresent (.toolCalls d)) (assoc :tool-calls (mapv chat-delta-tool-call->map (.get (.toolCalls d))))))
 
 (defn- chat-chunk-choice->map [^ChatCompletionChunk$Choice c]
   (cond-> {:index (.index c)
            :delta (chat-delta->map (.delta c))}
-    (.isPresent (.finishReason c)) (assoc :finish-reason (->keyword (.asString ^ChatCompletionChunk$Choice$FinishReason (.get (.finishReason c)))))))
+    (.isPresent (.finishReason c)) (assoc :finish-reason (impl/->keyword (.asString ^ChatCompletionChunk$Choice$FinishReason (.get (.finishReason c)))))))
 
 (defn- chat-chunk->map [^ChatCompletionChunk chunk]
   (cond-> {:type :chunk
@@ -1402,7 +1322,7 @@
   when present. This is the compatibility path for OpenAI-compatible endpoints
   that do not support the Responses API."
   [^OpenAIClient client req]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^ChatService chat (.chat client)
           ^ChatCompletionService svc (.completions chat)]
       (chat-completion->map (.create svc (->chat-params req))))))
@@ -1413,7 +1333,7 @@
   the same `req` map as `create-chat-completion`. The underlying HTTP stream is
   closed automatically."
   ^String [^OpenAIClient client req on-event]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^ChatService chat (.chat client)
           ^ChatCompletionService svc (.completions chat)]
       (with-open [^StreamResponse sr (.createStreaming svc (->chat-params req))]
@@ -1433,7 +1353,7 @@
 (defn get-response
   "Retrieve one stored response by id as a response map."
   [^OpenAIClient client ^String response-id]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^ResponseService svc (.responses client)]
       (response->map (.retrieve svc response-id)))))
 
@@ -1441,16 +1361,16 @@
   "List input items for a stored response id as normalized maps. Pages are
   followed automatically."
   [^OpenAIClient client ^String response-id]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^ResponseService svc (.responses client)
           ^InputItemService items (.inputItems svc)
           ^InputItemListPage p (.list items response-id)]
-      (mapv response-item->map (.autoPager p)))))
+      (mapv response-item->map (impl/all-pages p)))))
 
 (defn delete-response
   "Delete one stored response by id. The OpenAI Java SDK returns void."
   [^OpenAIClient client ^String response-id]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^ResponseService svc (.responses client)]
       (.delete svc response-id))
     nil))
@@ -1458,7 +1378,7 @@
 (defn cancel-response
   "Cancel an in-progress response by id and return the resulting response map."
   [^OpenAIClient client ^String response-id]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^ResponseService svc (.responses client)]
       (response->map (.cancel svc response-id)))))
 
@@ -1473,7 +1393,7 @@
 (defn compact
   "Compact a previous response by id and return the compacted response map."
   [^OpenAIClient client ^String response-id]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^ResponseService svc (.responses client)]
       (compacted-response->map
        (.compact svc (-> (com.openai.models.responses.ResponseCompactParams/builder)
@@ -1483,10 +1403,10 @@
 ;; Files
 
 (defn- ->file-purpose ^FilePurpose [purpose]
-  (FilePurpose/of (enum-name purpose)))
+  (FilePurpose/of (impl/enum-name purpose)))
 
 (defn- ->file-expires-after ^FileCreateParams$ExpiresAfter [{:keys [seconds]}]
-  (when-not seconds (missing-key! :seconds))
+  (when-not seconds (impl/missing-key! :seconds))
   (let [^FileCreateParams$ExpiresAfter$Builder b (FileCreateParams$ExpiresAfter/builder)]
     (.anchor b (JsonValue/from "created_at"))
     (.seconds b (long seconds))
@@ -1501,8 +1421,8 @@
 
 (defn- ->file-create-params ^FileCreateParams
   [{:keys [file purpose filename expires-after]}]
-  (when-not file (missing-key! :file))
-  (when-not purpose (missing-key! :purpose))
+  (when-not file (impl/missing-key! :file))
+  (when-not purpose (impl/missing-key! :purpose))
   (let [^FileCreateParams$Builder b (FileCreateParams/builder)]
     (cond
       (instance? java.nio.file.Path file) (.file b ^java.nio.file.Path file)
@@ -1521,8 +1441,8 @@
            :bytes (.bytes f)
            :created-at (.createdAt f)
            :filename (.filename f)
-           :purpose (->keyword (.asString (.purpose f)))
-           :status (->keyword (.asString (.status f)))}
+           :purpose (impl/->keyword (.asString (.purpose f)))
+           :status (impl/->keyword (.asString (.status f)))}
     (.isPresent (.expiresAt f)) (assoc :expires-at (.get (.expiresAt f)))
     (.isPresent (.statusDetails f)) (assoc :status-details (.get (.statusDetails f)))))
 
@@ -1544,21 +1464,21 @@
   Returns `{:id :bytes :created-at :filename :purpose :status}` plus
   `:expires-at`/`:status-details` when present."
   [^OpenAIClient client req]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^FileService svc (.files client)]
       (file->map (.create svc (->file-create-params req))))))
 
 (defn get-file
   "Retrieve one file's metadata by id as a file map."
   [^OpenAIClient client ^String file-id]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^FileService svc (.files client)]
       (file->map (.retrieve svc file-id)))))
 
 (defn file-content
   "Download a file's content by id and return it as a byte array."
   ^bytes [^OpenAIClient client ^String file-id]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^FileService svc (.files client)]
       (with-open [r (.content svc file-id)]
         (.readAllBytes (.body r))))))
@@ -1568,15 +1488,15 @@
   (`:asc`/`:desc`), `:after`, and `:limit`. Pages are followed automatically."
   ([^OpenAIClient client] (list-files client {}))
   ([^OpenAIClient client opts]
-   (with-api-errors
+   (impl/with-api-errors
      (let [^FileService svc (.files client)
            ^FileListPage p (.list svc (->file-list-params opts))]
-       (mapv file->map (.autoPager p))))))
+       (mapv file->map (impl/all-pages p))))))
 
 (defn delete-file
   "Delete a file by id. Returns `{:id \"...\" :deleted true|false}`."
   [^OpenAIClient client ^String file-id]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^FileService svc (.files client)
           ^FileDeleted d (.delete svc file-id)]
       {:id (.id d) :deleted (.deleted d)})))
@@ -1590,7 +1510,7 @@
     (.build b)))
 
 (defn- ->output-expires-after ^BatchCreateParams$OutputExpiresAfter [{:keys [seconds]}]
-  (when-not seconds (missing-key! :seconds))
+  (when-not seconds (impl/missing-key! :seconds))
   (let [^BatchCreateParams$OutputExpiresAfter$Builder b
         (BatchCreateParams$OutputExpiresAfter/builder)]
     (.anchor b (JsonValue/from "created_at"))
@@ -1599,8 +1519,8 @@
 
 (defn- ->batch-create-params ^BatchCreateParams
   [{:keys [input-file-id endpoint completion-window metadata output-expires-after]}]
-  (when-not input-file-id (missing-key! :input-file-id))
-  (when-not endpoint (missing-key! :endpoint))
+  (when-not input-file-id (impl/missing-key! :input-file-id))
+  (when-not endpoint (impl/missing-key! :endpoint))
   (let [^BatchCreateParams$Builder b (BatchCreateParams/builder)]
     (.inputFileId b ^String input-file-id)
     (.endpoint b (BatchCreateParams$Endpoint/of endpoint))
@@ -1612,7 +1532,7 @@
 
 (defn- batch->map [^Batch b]
   (cond-> {:id (.id b)
-           :status (->keyword (.asString (.status b)))
+           :status (impl/->keyword (.asString (.status b)))
            :endpoint (.endpoint b)
            :input-file-id (.inputFileId b)
            :completion-window (.completionWindow b)
@@ -1646,21 +1566,21 @@
   `:completed-at`, `:failed-at`, `:expires-at`, or `:request-counts
   {:completed :failed :total}` when present."
   [^OpenAIClient client req]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^BatchService svc (.batches client)]
       (batch->map (.create svc (->batch-create-params req))))))
 
 (defn get-batch
   "Retrieve one batch by id as a batch map."
   [^OpenAIClient client ^String batch-id]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^BatchService svc (.batches client)]
       (batch->map (.retrieve svc batch-id)))))
 
 (defn cancel-batch
   "Cancel an in-progress batch by id and return the resulting batch map."
   [^OpenAIClient client ^String batch-id]
-  (with-api-errors
+  (impl/with-api-errors
     (let [^BatchService svc (.batches client)]
       (batch->map (.cancel svc batch-id)))))
 
@@ -1669,7 +1589,7 @@
   `:limit`. Pages are followed automatically."
   ([^OpenAIClient client] (list-batches client {}))
   ([^OpenAIClient client opts]
-   (with-api-errors
+   (impl/with-api-errors
      (let [^BatchService svc (.batches client)
            ^BatchListPage p (.list svc (->batch-list-params opts))]
-       (mapv batch->map (.autoPager p))))))
+       (mapv batch->map (impl/all-pages p))))))
