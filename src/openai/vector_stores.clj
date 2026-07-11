@@ -4,7 +4,13 @@
   (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)
            (com.openai.core JsonValue)
-           (com.openai.models.vectorstores VectorStore VectorStore$ExpiresAfter
+           (com.openai.models ComparisonFilter ComparisonFilter$Builder ComparisonFilter$Type
+                              CompoundFilter CompoundFilter$Builder CompoundFilter$Type)
+           (com.openai.models.vectorstores AutoFileChunkingStrategyParam
+                                            FileChunkingStrategyParam
+                                            StaticFileChunkingStrategy
+                                            StaticFileChunkingStrategyObjectParam
+                                            VectorStore VectorStore$ExpiresAfter VectorStore$Metadata
                                             VectorStore$FileCounts VectorStoreCreateParams
                                             VectorStoreCreateParams$Builder
                                             VectorStoreCreateParams$ExpiresAfter
@@ -14,14 +20,17 @@
                                             VectorStoreDeleted VectorStoreListPage
                                             VectorStoreListParams VectorStoreListParams$Order
                                             VectorStoreSearchPage VectorStoreSearchParams
+                                            VectorStoreSearchParams$Filters
                                             VectorStoreSearchParams$RankingOptions
                                             VectorStoreSearchParams$RankingOptions$Ranker
-                                            VectorStoreSearchResponse VectorStoreSearchResponse$Content
+                                            VectorStoreSearchResponse VectorStoreSearchResponse$Attributes
+                                            VectorStoreSearchResponse$Content
                                             VectorStoreUpdateParams VectorStoreUpdateParams$Builder)
            (com.openai.models.vectorstores.files FileContentPage FileContentParams
                                                   FileCreateParams FileListPage FileListParams
                                                   FileListParams$Filter FileListParams$Order
                                                   FileRetrieveParams FileUpdateParams VectorStoreFile
+                                                  VectorStoreFile$Attributes
                                                   VectorStoreFileDeleted)
            (com.openai.models.vectorstores.filebatches FileBatchCancelParams
                                                         FileBatchCreateParams
@@ -52,13 +61,35 @@
     (.days b (long days))
     (.build b)))
 
+(defn- ->chunking-strategy ^FileChunkingStrategyParam
+  [{:keys [type max-chunk-size-tokens chunk-overlap-tokens]}]
+  (case type
+    :auto
+    (FileChunkingStrategyParam/ofAuto
+     (-> (AutoFileChunkingStrategyParam/builder)
+         (.type (JsonValue/from "auto"))
+         (.build)))
+
+    :static
+    (FileChunkingStrategyParam/ofStatic
+     (-> (StaticFileChunkingStrategyObjectParam/builder)
+         (.type (JsonValue/from "static"))
+         (.static_ (-> (StaticFileChunkingStrategy/builder)
+                       (.maxChunkSizeTokens (long max-chunk-size-tokens))
+                       (.chunkOverlapTokens (long chunk-overlap-tokens))
+                       (.build)))
+         (.build)))
+
+    (throw (ex-info "Unsupported chunking strategy" {:type type}))))
+
 (defn- ->create-params ^VectorStoreCreateParams
-  [{:keys [name file-ids expires-after metadata]}]
+  [{:keys [name file-ids expires-after metadata chunking-strategy]}]
   (let [^VectorStoreCreateParams$Builder b (VectorStoreCreateParams/builder)]
     (when name (.name b ^String name))
     (when file-ids (.fileIds b ^java.util.List file-ids))
     (when expires-after (.expiresAfter b (->expires-after expires-after)))
     (when metadata (.metadata b (->metadata metadata)))
+    (when chunking-strategy (.chunkingStrategy b (->chunking-strategy chunking-strategy)))
     (.build b)))
 
 (defn- file-counts->map [^VectorStore$FileCounts c]
@@ -68,13 +99,22 @@
 (defn- expires-after->map [^VectorStore$ExpiresAfter e]
   {:anchor :last-active-at :days (.days e)})
 
+(defn- properties->map [properties]
+  (into {}
+        (map (fn [[k v]] [(keyword k) (impl/json-value->clj v)]))
+        properties))
+
+(defn- metadata->map [^VectorStore$Metadata metadata]
+  (properties->map (._additionalProperties metadata)))
+
 (defn- vector-store->map [^VectorStore s]
   (cond-> {:id (.id s) :name (.name s) :created-at (.createdAt s)
            :status (impl/->keyword (.asString (.status s)))
            :usage-bytes (.usageBytes s) :file-counts (file-counts->map (.fileCounts s))}
     (.isPresent (.expiresAt s)) (assoc :expires-at (impl/opt-get (.expiresAt s)))
     (.isPresent (.expiresAfter s)) (assoc :expires-after (expires-after->map (impl/opt-get (.expiresAfter s))))
-    (.isPresent (.lastActiveAt s)) (assoc :last-active-at (impl/opt-get (.lastActiveAt s)))))
+    (.isPresent (.lastActiveAt s)) (assoc :last-active-at (impl/opt-get (.lastActiveAt s)))
+    (.isPresent (.metadata s)) (assoc :metadata (metadata->map (impl/opt-get (.metadata s))))))
 
 (defn create [^OpenAIClient client req]
   (impl/with-api-errors
@@ -124,12 +164,46 @@
           ^VectorStoreDeleted d (.delete svc id)]
       {:id (.id d) :deleted (.deleted d)})))
 
+(defn- ->comparison-filter ^ComparisonFilter [{:keys [type key value]}]
+  (let [^ComparisonFilter$Builder b (ComparisonFilter/builder)]
+    (when-not type (impl/missing-key! :type))
+    (when-not key (impl/missing-key! :key))
+    (.type b (ComparisonFilter$Type/of (name type)))
+    (.key b ^String key)
+    (cond
+      (string? value) (.value b ^String value)
+      (number? value) (.value b (double value))
+      (instance? Boolean value) (.value b (boolean value))
+      :else (.value b ^String (str value)))
+    (.build b)))
+
+(defn- filter->plain [{:keys [type key value filters]}]
+  (if filters
+    {"type" (name type) "filters" (mapv filter->plain filters)}
+    {"type" (name type) "key" key "value" value}))
+
+(defn- ->compound-filter ^CompoundFilter [{:keys [type filters]}]
+  (when-not type (impl/missing-key! :type))
+  (let [^CompoundFilter$Builder b (CompoundFilter/builder)]
+    (.type b (CompoundFilter$Type/of (name type)))
+    (doseq [f filters]
+      (if (:filters f)
+        (.addFilter b (JsonValue/from (filter->plain f)))
+        (.addFilter b (->comparison-filter f))))
+    (.build b)))
+
+(defn- ->search-filters ^VectorStoreSearchParams$Filters [filters]
+  (if (:filters filters)
+    (VectorStoreSearchParams$Filters/ofCompoundFilter (->compound-filter filters))
+    (VectorStoreSearchParams$Filters/ofComparisonFilter (->comparison-filter filters))))
+
 (defn- ->search-params ^VectorStoreSearchParams
-  [^String id {:keys [query max-num-results ranking-options rewrite-query]}]
+  [^String id {:keys [query filters max-num-results ranking-options rewrite-query]}]
   (when-not query (impl/missing-key! :query))
   (let [b (VectorStoreSearchParams/builder)]
     (.vectorStoreId b id)
     (if (string? query) (.query b ^String query) (.queryOfStrings b ^java.util.List query))
+    (when filters (.filters b (->search-filters filters)))
     (when max-num-results (.maxNumResults b (long max-num-results)))
     (when rewrite-query (.rewriteQuery b (boolean rewrite-query)))
     (when ranking-options
@@ -144,8 +218,13 @@
   {:type (impl/->keyword (.asString (.type c))) :text (.text c)})
 
 (defn- search-result->map [^VectorStoreSearchResponse r]
-  {:file-id (.fileId r) :filename (.filename r) :score (.score r)
-   :content (mapv search-content->map (.content r))})
+  (cond-> {:file-id (.fileId r) :filename (.filename r) :score (.score r)
+           :content (mapv search-content->map (.content r))}
+    (.isPresent (.attributes r))
+    (assoc :attributes
+           (properties->map
+            (._additionalProperties ^VectorStoreSearchResponse$Attributes
+                                    (impl/opt-get (.attributes r)))))))
 
 (defn search [^OpenAIClient client ^String id req]
   (impl/with-api-errors
@@ -158,13 +237,22 @@
            :created-at (.createdAt f) :usage-bytes (.usageBytes f)
            :status (impl/->keyword (.asString (.status f)))}
     (.isPresent (.lastError f))
-    (assoc :last-error (str (impl/opt-get (.lastError f))))))
+    (assoc :last-error (impl/sdk-object->clj (impl/opt-get (.lastError f))))
+    (.isPresent (.attributes f))
+    (assoc :attributes
+           (properties->map
+            (._additionalProperties ^VectorStoreFile$Attributes
+                                    (impl/opt-get (.attributes f)))))
+    (.isPresent (.chunkingStrategy f))
+    (assoc :chunking-strategy (impl/sdk-object->clj (impl/opt-get (.chunkingStrategy f))))))
 
-(defn- ->file-create-params ^FileCreateParams [^String store-id {:keys [file-id attributes]}]
+(defn- ->file-create-params ^FileCreateParams
+  [^String store-id {:keys [file-id attributes chunking-strategy]}]
   (when-not file-id (impl/missing-key! :file-id))
   (let [b (FileCreateParams/builder)]
     (.vectorStoreId b store-id) (.fileId b ^String file-id)
     (when attributes (.putAdditionalBodyProperty b "attributes" (JsonValue/from attributes)))
+    (when chunking-strategy (.chunkingStrategy b (->chunking-strategy chunking-strategy)))
     (.build b)))
 
 (defn create-file [^OpenAIClient client ^String store-id req]
@@ -237,11 +325,12 @@
    :file-counts (batch-counts->map (.fileCounts b))})
 
 (defn- ->batch-create-params ^FileBatchCreateParams
-  [^String store-id {:keys [file-ids attributes]}]
+  [^String store-id {:keys [file-ids attributes chunking-strategy]}]
   (let [b (FileBatchCreateParams/builder)]
     (.vectorStoreId b store-id)
     (when file-ids (.fileIds b ^java.util.List file-ids))
     (when attributes (.putAdditionalBodyProperty b "attributes" (JsonValue/from attributes)))
+    (when chunking-strategy (.chunkingStrategy b (->chunking-strategy chunking-strategy)))
     (.build b)))
 
 (defn create-file-batch [^OpenAIClient client ^String store-id req]
