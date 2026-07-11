@@ -284,3 +284,7 @@
            ^FileBatchListFilesPage page
            (.listFiles svc (->batch-list-params store-id batch-id opts))]
        (mapv vector-store-file->map (impl/all-pages page))))))
+
+(def file-batch-create create-file-batch)
+(def file-batch-retrieve retrieve-file-batch)
+(def file-batch-cancel cancel-file-batch)

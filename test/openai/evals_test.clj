@@ -12,3 +12,8 @@
     (is (.isCustom (.dataSourceConfig p)))
     (is (.isStringCheck ^EvalCreateParams$TestingCriterion
                         (first (.testingCriteria p))))))
+
+(deftest exposes-run-and-output-item-prefix-apis
+  (doseq [sym '[run-create run-retrieve run-list run-cancel run-delete
+                output-item-list output-item-retrieve]]
+    (is (fn? (some-> (ns-resolve 'openai.evals sym) deref)))))

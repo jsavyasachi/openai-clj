@@ -176,3 +176,11 @@
                 (.outputItemId item-id) (.build))
           ^OutputItemService svc (.outputItems (.runs (.evals client)))]
       (impl/sdk-object->clj (.retrieve svc p)))))
+
+(def run-create create-run)
+(def run-retrieve retrieve-run)
+(def run-list list-runs)
+(def run-cancel cancel-run)
+(def run-delete delete-run)
+(def output-item-list list-output-items)
+(def output-item-retrieve retrieve-output-item)

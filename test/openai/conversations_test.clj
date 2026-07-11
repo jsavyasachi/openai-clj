@@ -14,3 +14,7 @@
         ^EasyInputMessage$Content content (.content message)]
     (is (= 1 (count (opt (.items p)))))
     (is (= "hello" (.asTextInput content)))))
+
+(deftest exposes-item-prefix-api
+  (doseq [sym '[item-create item-retrieve item-list item-delete]]
+    (is (fn? (some-> (ns-resolve 'openai.conversations sym) deref)))))

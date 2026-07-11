@@ -103,3 +103,8 @@
           svc (.content (.versions (.skills client)))]
       (with-open [^HttpResponse r (.retrieve ^com.openai.services.blocking.skills.versions.ContentService svc p)]
         (.readAllBytes (.body r))))))
+
+(def version-create create-version)
+(def version-retrieve retrieve-version)
+(def version-list list-versions)
+(def version-delete delete-version)

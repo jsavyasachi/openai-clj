@@ -121,3 +121,8 @@
           p (-> (ItemDeleteParams/builder)
                 (.conversationId conversation-id) (.itemId item-id) (.build))]
       (conversation->map (.delete svc p)))))
+
+(def item-create create-items)
+(def item-retrieve retrieve-item)
+(def item-list list-items)
+(def item-delete delete-item)

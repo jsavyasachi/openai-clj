@@ -41,3 +41,7 @@
             :file-counts {:cancelled 1 :completed 2 :failed 3
                           :in-progress 4 :total 10}}
            (#'vector-stores/vector-store->map store)))))
+
+(deftest exposes-file-batch-prefix-api
+  (doseq [sym '[file-batch-create file-batch-retrieve file-batch-cancel]]
+    (is (fn? (some-> (ns-resolve 'openai.vector-stores sym) deref)))))
