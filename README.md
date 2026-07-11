@@ -17,13 +17,13 @@ Responses API.
 deps.edn:
 
 ```clojure
-net.clojars.savya/openai-clj {:mvn/version "0.5.0"}
+net.clojars.savya/openai-clj {:mvn/version "0.6.0"}
 ```
 
 Leiningen:
 
 ```clojure
-[net.clojars.savya/openai-clj "0.5.0"]
+[net.clojars.savya/openai-clj "0.6.0"]
 ```
 
 Tracks [`com.openai/openai-java` 4.41.0](https://github.com/openai/openai-java/releases/tag/v4.41.0).
@@ -112,14 +112,68 @@ Structured outputs use `:json-schema`:
                         :required ["answer"]}}}
 ```
 
+## Chat Completions
+
+Prefer the Responses API for new OpenAI work. Chat Completions is exposed as
+the compatibility path for OpenAI-compatible endpoints that do not support
+Responses, including local LLMs and hosted compat providers.
+
+```clojure
+(openai/create-chat-completion
+ client
+ {:model "gpt-4o-mini"
+  :messages [{:role :system :content "Be terse."}
+             {:role :user :content "Write one sentence about Clojure maps."}]})
+;; => {:id "chatcmpl_..."
+;;     :model "gpt-4o-mini"
+;;     :created 1790000000
+;;     :choices [{:index 0
+;;                :finish-reason :stop
+;;                :message {:role :assistant
+;;                          :content "Clojure maps are ..."}}]
+;;     :text "Clojure maps are ..."
+;;     :usage {:prompt-tokens 14 :completion-tokens 12 :total-tokens 26}}
+```
+
+Function tools use the same JSON-schema-shaped `:parameters` maps as Responses:
+
+```clojure
+(openai/create-chat-completion
+ client
+ {:model "gpt-4o-mini"
+  :messages [{:role :user :content "Weather in Denver?"}]
+  :tools [{:type :function
+           :name "get_weather"
+           :description "Get current weather"
+           :strict true
+           :parameters {:type "object"
+                        :properties {:location {:type "string"}}
+                        :required ["location"]}}]
+  :tool-choice {:type :function :name "get_weather"}})
+```
+
+Streaming returns the concatenated content and calls the callback for each
+normalized chunk:
+
+```clojure
+(openai/stream-chat-completion-text
+ client
+ {:model "gpt-4o-mini"
+  :messages [{:role :user :content "Count to three."}]
+  :stream-options {:include-usage true}}
+ println)
+```
+
 ## Scope
 
-In scope: Responses API, structured outputs, multimodal input parts, response
-streaming, response lifecycle subservices, response compaction, token counting,
-built-in Responses tools, MCP tools, client options (including Azure OpenAI
-endpoints), embeddings, files, batches, and models.
+In scope: Responses API, Chat Completions compatibility, structured outputs,
+multimodal input parts, response streaming, response lifecycle subservices,
+response compaction, token counting, built-in Responses tools, MCP tools,
+client options (including Azure OpenAI endpoints), embeddings, files, batches,
+and models.
 
-Out of scope: chat completions, images API, audio, and realtime.
+Out of scope: images API, audio output, realtime, and stored Chat Completions
+CRUD.
 
 ## Running tests
 

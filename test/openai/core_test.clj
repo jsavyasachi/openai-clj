@@ -2,6 +2,30 @@
   (:require [clojure.test :refer [deftest is testing]]
             [openai.core :as openai])
   (:import (com.openai.client OpenAIClient)
+           (com.openai.models ResponseFormatJsonSchema
+                              ResponseFormatJsonSchema$JsonSchema
+                              ResponseFormatJsonSchema$JsonSchema$Schema)
+           (com.openai.models.chat.completions ChatCompletion
+                                               ChatCompletion$Choice
+                                               ChatCompletion$Choice$FinishReason
+                                               ChatCompletion$ServiceTier
+                                               ChatCompletionChunk
+                                               ChatCompletionChunk$Choice
+                                               ChatCompletionChunk$Choice$Delta
+                                               ChatCompletionChunk$Choice$Delta$Role
+                                               ChatCompletionChunk$Choice$Delta$ToolCall
+                                               ChatCompletionChunk$Choice$Delta$ToolCall$Function
+                                               ChatCompletionChunk$Choice$Delta$ToolCall$Type
+                                               ChatCompletionChunk$Choice$FinishReason
+                                               ChatCompletionContentPart
+                                               ChatCompletionCreateParams
+                                               ChatCompletionCreateParams$ServiceTier
+                                               ChatCompletionMessage
+                                               ChatCompletionMessageFunctionToolCall
+                                               ChatCompletionMessageFunctionToolCall$Function
+                                               ChatCompletionMessageToolCall
+                                               ChatCompletionMessageParam)
+           (com.openai.models.completions CompletionUsage)
            (com.openai.models.models Model)
            (com.openai.models.responses ResponseCreateParams
                                         ResponseCreateParams$ToolChoice
@@ -74,6 +98,15 @@
 
 (defn- input-token-count-params [m]
   (#'openai/->input-token-count-params m))
+
+(defn- chat-params ^ChatCompletionCreateParams [m]
+  (#'openai/->chat-params m))
+
+(defn- chat-completion->map [x]
+  (#'openai/chat-completion->map x))
+
+(defn- chat-chunk->map [x]
+  (#'openai/chat-chunk->map x))
 
 (defn- opt [o]
   (when (.isPresent ^java.util.Optional o)
@@ -1177,3 +1210,249 @@
     (is (= "desc" (.asString (opt (.order p)))))
     (is (= "file_0" (opt (.after p))))
     (is (= 3 (opt (.limit p))))))
+
+(deftest translates-chat-message-roles-and-content
+  (let [p (chat-params {:model "gpt-4o-mini"
+                        :messages [{:role :system :content "sys"}
+                                   {:role :developer :content "dev"}
+                                   {:role :user :content "hi"}
+                                   {:role :assistant :content "there"}
+                                   {:role :tool :tool-call-id "call_1" :content "ok"}]})
+        messages (.messages p)]
+    (is (= "gpt-4o-mini" (.asString (.model p))))
+    (is (.isSystem ^ChatCompletionMessageParam (first messages)))
+    (is (.isDeveloper ^ChatCompletionMessageParam (second messages)))
+    (is (.isUser ^ChatCompletionMessageParam (nth messages 2)))
+    (is (.isAssistant ^ChatCompletionMessageParam (nth messages 3)))
+    (is (.isTool ^ChatCompletionMessageParam (nth messages 4)))
+    (is (= "sys" (-> ^ChatCompletionMessageParam (first messages) .asSystem .content .asText)))
+    (is (= "dev" (-> ^ChatCompletionMessageParam (second messages) .asDeveloper .content .asText)))
+    (is (= "hi" (-> ^ChatCompletionMessageParam (nth messages 2) .asUser .content .asText)))
+    (is (= "there" (-> ^ChatCompletionMessageParam (nth messages 3) .asAssistant .content opt .asText)))
+    (is (= "call_1" (-> ^ChatCompletionMessageParam (nth messages 4) .asTool .toolCallId)))))
+
+(deftest translates-chat-user-content-parts
+  (let [parts (-> (chat-params {:model "gpt-4o-mini"
+                                :messages [{:role :user
+                                            :content [{:type :text :text "look"}
+                                                      {:type :image
+                                                       :image-url "https://example.test/image.png"
+                                                       :detail :high}
+                                                      {:type :input-audio
+                                                       :data "AAAA"
+                                                       :format :wav}]}]})
+                  .messages
+                  first
+                  .asUser
+                  .content
+                  .asArrayOfContentParts)
+        text-part (.asText ^ChatCompletionContentPart (first parts))
+        image-part (.asImageUrl ^ChatCompletionContentPart (second parts))
+        audio-part (.asInputAudio ^ChatCompletionContentPart (nth parts 2))]
+    (is (= "look" (.text text-part)))
+    (is (= "https://example.test/image.png" (-> image-part .imageUrl .url)))
+    (is (= "high" (-> image-part .imageUrl .detail opt .asString)))
+    (is (= "AAAA" (-> audio-part .inputAudio .data)))
+    (is (= "wav" (-> audio-part .inputAudio .format .asString)))))
+
+(deftest translates-chat-scalar-options
+  (let [p (chat-params {:model "gpt-4o-mini"
+                        :messages [{:role :user :content "hi"}]
+                        :temperature 0.1
+                        :top-p 0.9
+                        :max-tokens 64
+                        :max-completion-tokens 32
+                        :n 2
+                        :stop ["END" "DONE"]
+                        :presence-penalty 0.2
+                        :frequency-penalty 0.3
+                        :logit-bias {"42" -100}
+                        :seed 123
+                        :user "user_1"
+                        :metadata {:app "tests"}
+                        :store false
+                        :service-tier :priority
+                        :parallel-tool-calls true
+                        :logprobs true
+                        :top-logprobs 2
+                        :reasoning-effort :low
+                        :stream-options {:include-usage true}})]
+    (is (= 0.1 (opt (.temperature p))))
+    (is (= 0.9 (opt (.topP p))))
+    (is (= 64 (opt (.maxTokens p))))
+    (is (= 32 (opt (.maxCompletionTokens p))))
+    (is (= 2 (opt (.n p))))
+    (is (= ["END" "DONE"] (.asStrings (opt (.stop p)))))
+    (is (= 0.2 (opt (.presencePenalty p))))
+    (is (= 0.3 (opt (.frequencyPenalty p))))
+    (is (= -100 (.convert (get (._additionalProperties (opt (.logitBias p))) "42") Integer)))
+    (is (= 123 (opt (.seed p))))
+    (is (= "user_1" (opt (.user p))))
+    (is (= "tests" (.asStringOrThrow (get (._additionalProperties (opt (.metadata p))) "app"))))
+    (is (false? (opt (.store p))))
+    (is (= "priority" (.asString (opt (.serviceTier p)))))
+    (is (true? (opt (.parallelToolCalls p))))
+    (is (true? (opt (.logprobs p))))
+    (is (= 2 (opt (.topLogprobs p))))
+    (is (= "low" (.asString (opt (.reasoningEffort p)))))
+    (is (true? (-> p .streamOptions opt .includeUsage opt)))))
+
+(deftest translates-chat-tools-tool-choice-and-response-format
+  (let [p (chat-params {:model "gpt-4o-mini"
+                        :messages [{:role :user :content "weather"}]
+                        :tools [{:type :function
+                                 :name "get_weather"
+                                 :description "Get weather"
+                                 :strict true
+                                 :parameters {:type "object"
+                                              :properties {:location {:type "string"}}
+                                              :required ["location"]}}]
+                        :tool-choice {:type :function :name "get_weather"}
+                        :response-format {:type :json-schema
+                                          :json-schema {:name "answer"
+                                                        :description "Answer"
+                                                        :strict true
+                                                        :schema {:type "object"
+                                                                 :properties {:answer {:type "string"}}
+                                                                 :required ["answer"]}}}})
+        tool (first (opt (.tools p)))
+        f (.function (.asFunction tool))
+        params-props (._additionalProperties (opt (.parameters f)))
+        tc (opt (.toolChoice p))
+        rf (-> p .responseFormat opt .asJsonSchema .jsonSchema)
+        schema-props (._additionalProperties (opt (.schema rf)))]
+    (is (.isFunction tool))
+    (is (= "get_weather" (.name f)))
+    (is (= "Get weather" (opt (.description f))))
+    (is (true? (opt (.strict f))))
+    (is (= "object" (.asStringOrThrow (get params-props "type"))))
+    (is (.isNamedToolChoice tc))
+    (is (= "get_weather" (-> tc .asNamedToolChoice .function .name)))
+    (is (= "answer" (.name rf)))
+    (is (= "Answer" (opt (.description rf))))
+    (is (true? (opt (.strict rf))))
+    (is (= "object" (.asStringOrThrow (get schema-props "type"))))))
+
+(deftest translates-chat-required-keys-and-unknown-keys
+  (is (= {:openai/error :missing-key :key :model}
+         (ex-data-for #(chat-params {:messages [{:role :user :content "hi"}]}))))
+  (is (= {:openai/error :missing-key :key :messages}
+         (ex-data-for #(chat-params {:model "gpt-4o-mini"}))))
+  (let [p (chat-params {:model "gpt-4o-mini"
+                        :messages [{:role :user :content "hi"}]
+                        :unknown "ignored"})]
+    (is (= "gpt-4o-mini" (.asString (.model p))))
+    (is (= 1 (count (.messages p))))))
+
+(defn- chat-tool-call [args]
+  (ChatCompletionMessageToolCall/ofFunction
+   (-> (ChatCompletionMessageFunctionToolCall/builder)
+       (.id "call_1")
+       (.function (-> (ChatCompletionMessageFunctionToolCall$Function/builder)
+                      (.name "get_weather")
+                      (.arguments args)
+                      (.build)))
+       (.build))))
+
+(defn- chat-completion [args]
+  (-> (ChatCompletion/builder)
+      (.id "chatcmpl_1")
+      (.model "gpt-4o-mini")
+      (.created 1790000000)
+      (.serviceTier ChatCompletion$ServiceTier/DEFAULT)
+      (.usage (-> (CompletionUsage/builder)
+                  (.promptTokens 10)
+                  (.completionTokens 20)
+                  (.totalTokens 30)
+                  (.build)))
+      (.choices [(-> (ChatCompletion$Choice/builder)
+                     (.index 0)
+                     (.finishReason ChatCompletion$Choice$FinishReason/TOOL_CALLS)
+                     (.logprobs (java.util.Optional/empty))
+                     (.message (-> (ChatCompletionMessage/builder)
+                                   (.role (com.openai.core.JsonValue/from "assistant"))
+                                   (.content "Use get_weather.")
+                                   (.refusal "no")
+                                   (.toolCalls [(chat-tool-call args)])
+                                   (.build)))
+                     (.build))])
+      (.build)))
+
+(deftest maps-chat-completion-to-clojure
+  (let [m (chat-completion->map (chat-completion "{\"location\":\"Denver\"}"))]
+    (is (= {:id "chatcmpl_1"
+            :model "gpt-4o-mini"
+            :created 1790000000
+            :choices [{:index 0
+                       :finish-reason :tool-calls
+                       :message {:role :assistant
+                                 :content "Use get_weather."
+                                 :tool-calls [{:id "call_1"
+                                               :type :function
+                                               :function {:name "get_weather"
+                                                          :arguments {:location "Denver"}}}]
+                                 :refusal "no"}}]
+            :usage {:prompt-tokens 10
+                    :completion-tokens 20
+                    :total-tokens 30}
+            :text "Use get_weather."
+            :service-tier :default}
+           m))))
+
+(deftest chat-completion-map-keeps-garbage-arguments-raw
+  (let [m (chat-completion->map (chat-completion "{not json}"))]
+    (is (= "{not json}" (-> m :choices first :message :tool-calls first :function :arguments)))))
+
+(deftest maps-chat-stream-chunk-to-clojure
+  (let [chunk (-> (ChatCompletionChunk/builder)
+                  (.id "chunk_1")
+                  (.model "gpt-4o-mini")
+                  (.created 1790000001)
+                  (.choices [(-> (ChatCompletionChunk$Choice/builder)
+                                 (.index 0)
+                                 (.finishReason ChatCompletionChunk$Choice$FinishReason/STOP)
+                                 (.delta (-> (ChatCompletionChunk$Choice$Delta/builder)
+                                             (.role ChatCompletionChunk$Choice$Delta$Role/ASSISTANT)
+                                             (.content "Hel")
+                                             (.toolCalls [(-> (ChatCompletionChunk$Choice$Delta$ToolCall/builder)
+                                                              (.index 0)
+                                                              (.id "call_1")
+                                                              (.type ChatCompletionChunk$Choice$Delta$ToolCall$Type/FUNCTION)
+                                                              (.function (-> (ChatCompletionChunk$Choice$Delta$ToolCall$Function/builder)
+                                                                             (.name "get_weather")
+                                                                             (.arguments "{\"")
+                                                                             (.build)))
+                                                              (.build))])
+                                             (.build)))
+                                 (.build))])
+                  (.build))]
+    (is (= {:type :chunk
+            :choices [{:index 0
+                       :finish-reason :stop
+                       :delta {:role :assistant
+                               :content "Hel"
+                               :tool-calls [{:index 0
+                                             :id "call_1"
+                                             :type :function
+                                             :function {:name "get_weather"
+                                                        :arguments "{\""}}]}}]}
+           (chat-chunk->map chunk)))))
+
+(deftest maps-chat-stream-usage-only-chunk
+  (let [chunk (-> (ChatCompletionChunk/builder)
+                  (.id "chunk_2")
+                  (.model "gpt-4o-mini")
+                  (.created 1790000002)
+                  (.choices [])
+                  (.usage (-> (CompletionUsage/builder)
+                              (.promptTokens 1)
+                              (.completionTokens 2)
+                              (.totalTokens 3)
+                              (.build)))
+                  (.build))]
+    (is (= {:type :chunk
+            :choices []
+            :usage {:prompt-tokens 1
+                    :completion-tokens 2
+                    :total-tokens 3}}
+           (chat-chunk->map chunk)))))

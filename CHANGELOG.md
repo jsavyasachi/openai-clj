@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.6.0] - 2026-07-10
+### Added
+- Added Chat Completions API compatibility support, including create and streaming helpers.
+
 ## [0.5.2] - 2026-07-09
 ### Changed
 - Reorganized the README into a cljdoc article tree under `doc/` (Tools, Streaming, Embeddings/Files/Batches, Azure, Responses & Errors, Migrating). Documentation content is unchanged; no API changes.

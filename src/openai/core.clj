@@ -27,10 +27,85 @@
                               CompoundFilter
                               CompoundFilter$Builder
                               CompoundFilter$Type
+                              FunctionDefinition
+                              FunctionDefinition$Builder
+                              FunctionParameters
+                              FunctionParameters$Builder
                               Reasoning
                               Reasoning$Builder
                               ReasoningEffort
+                              ResponseFormatJsonObject
+                              ResponseFormatJsonObject$Builder
+                              ResponseFormatJsonSchema
+                              ResponseFormatJsonSchema$Builder
+                              ResponseFormatJsonSchema$JsonSchema
+                              ResponseFormatJsonSchema$JsonSchema$Builder
+                              ResponseFormatJsonSchema$JsonSchema$Schema
+                              ResponseFormatJsonSchema$JsonSchema$Schema$Builder
                               ResponsesModel)
+           (com.openai.models.chat.completions ChatCompletion
+                                               ChatCompletion$Choice
+                                               ChatCompletion$Choice$FinishReason
+                                               ChatCompletion$ServiceTier
+                                               ChatCompletionAssistantMessageParam
+                                               ChatCompletionAssistantMessageParam$Builder
+                                               ChatCompletionChunk
+                                               ChatCompletionChunk$Choice
+                                               ChatCompletionChunk$Choice$Delta
+                                               ChatCompletionChunk$Choice$Delta$Role
+                                               ChatCompletionChunk$Choice$Delta$ToolCall
+                                               ChatCompletionChunk$Choice$Delta$ToolCall$Function
+                                               ChatCompletionChunk$Choice$Delta$ToolCall$Type
+                                               ChatCompletionChunk$Choice$FinishReason
+                                               ChatCompletionContentPart
+                                               ChatCompletionContentPartImage
+                                               ChatCompletionContentPartImage$Builder
+                                               ChatCompletionContentPartImage$ImageUrl
+                                               ChatCompletionContentPartImage$ImageUrl$Builder
+                                               ChatCompletionContentPartImage$ImageUrl$Detail
+                                               ChatCompletionContentPartInputAudio
+                                               ChatCompletionContentPartInputAudio$Builder
+                                               ChatCompletionContentPartInputAudio$InputAudio
+                                               ChatCompletionContentPartInputAudio$InputAudio$Builder
+                                               ChatCompletionContentPartInputAudio$InputAudio$Format
+                                               ChatCompletionContentPartText
+                                               ChatCompletionContentPartText$Builder
+                                               ChatCompletionCreateParams
+                                               ChatCompletionCreateParams$Builder
+                                               ChatCompletionCreateParams$LogitBias
+                                               ChatCompletionCreateParams$LogitBias$Builder
+                                               ChatCompletionCreateParams$Metadata
+                                               ChatCompletionCreateParams$Metadata$Builder
+                                               ChatCompletionCreateParams$ResponseFormat
+                                               ChatCompletionCreateParams$ServiceTier
+                                               ChatCompletionDeveloperMessageParam
+                                               ChatCompletionDeveloperMessageParam$Builder
+                                               ChatCompletionFunctionTool
+                                               ChatCompletionFunctionTool$Builder
+                                               ChatCompletionMessage
+                                               ChatCompletionMessage$Builder
+                                               ChatCompletionMessageFunctionToolCall
+                                               ChatCompletionMessageFunctionToolCall$Builder
+                                               ChatCompletionMessageFunctionToolCall$Function
+                                               ChatCompletionMessageFunctionToolCall$Function$Builder
+                                               ChatCompletionMessageParam
+                                               ChatCompletionMessageToolCall
+                                               ChatCompletionNamedToolChoice
+                                               ChatCompletionNamedToolChoice$Builder
+                                               ChatCompletionNamedToolChoice$Function
+                                               ChatCompletionNamedToolChoice$Function$Builder
+                                               ChatCompletionStreamOptions
+                                               ChatCompletionStreamOptions$Builder
+                                               ChatCompletionSystemMessageParam
+                                               ChatCompletionSystemMessageParam$Builder
+                                               ChatCompletionTool
+                                               ChatCompletionToolChoiceOption
+                                               ChatCompletionToolChoiceOption$Auto
+                                               ChatCompletionToolMessageParam
+                                               ChatCompletionToolMessageParam$Builder
+                                               ChatCompletionUserMessageParam
+                                               ChatCompletionUserMessageParam$Builder)
+           (com.openai.models.completions CompletionUsage)
            (com.openai.models.batches Batch
                                       Batch$Status
                                       BatchCancelParams
@@ -184,10 +259,12 @@
                                                       InputTokenCountParams$Truncation
                                                       InputTokenCountResponse)
            (com.openai.services.blocking BatchService
+                                         ChatService
                                          EmbeddingService
                                          FileService
                                          ModelService
                                          ResponseService)
+           (com.openai.services.blocking.chat ChatCompletionService)
            (com.openai.services.blocking.responses InputItemService
                                                     InputTokenService)))
 
@@ -995,6 +1072,363 @@
   ^String [^OpenAIClient client req on-text]
   (stream client req
           (fn [m] (when (and on-text (= :output-text-delta (:type m))) (on-text (:delta m))))))
+
+(defn- ->chat-metadata ^ChatCompletionCreateParams$Metadata [m]
+  (let [^ChatCompletionCreateParams$Metadata$Builder b (ChatCompletionCreateParams$Metadata/builder)]
+    (.additionalProperties b ^java.util.Map (->json-value-properties m))
+    (.build b)))
+
+(defn- ->chat-logit-bias ^ChatCompletionCreateParams$LogitBias [m]
+  (let [^ChatCompletionCreateParams$LogitBias$Builder b (ChatCompletionCreateParams$LogitBias/builder)]
+    (.additionalProperties b ^java.util.Map (->json-value-properties m))
+    (.build b)))
+
+(defn- ->chat-content-part-text ^ChatCompletionContentPartText [{:keys [text]}]
+  (let [^ChatCompletionContentPartText$Builder b (ChatCompletionContentPartText/builder)]
+    (when-not text (missing-key! :text))
+    (.text b ^String text)
+    (.build b)))
+
+(defn- ->chat-content-part-image ^ChatCompletionContentPartImage [{:keys [image-url detail]}]
+  (let [^ChatCompletionContentPartImage$ImageUrl$Builder ub (ChatCompletionContentPartImage$ImageUrl/builder)
+        ^ChatCompletionContentPartImage$Builder b (ChatCompletionContentPartImage/builder)]
+    (when-not image-url (missing-key! :image-url))
+    (.url ub ^String image-url)
+    (when detail (.detail ub (ChatCompletionContentPartImage$ImageUrl$Detail/of (name detail))))
+    (.imageUrl b (.build ub))
+    (.build b)))
+
+(defn- ->chat-content-part-input-audio ^ChatCompletionContentPartInputAudio [{:keys [data format]}]
+  (let [^ChatCompletionContentPartInputAudio$InputAudio$Builder ab
+        (ChatCompletionContentPartInputAudio$InputAudio/builder)
+        ^ChatCompletionContentPartInputAudio$Builder b (ChatCompletionContentPartInputAudio/builder)]
+    (when-not data (missing-key! :data))
+    (when-not format (missing-key! :format))
+    (.data ab ^String data)
+    (.format ab (ChatCompletionContentPartInputAudio$InputAudio$Format/of (name format)))
+    (.inputAudio b (.build ab))
+    (.build b)))
+
+(defn- ->chat-content-part ^ChatCompletionContentPart [{:keys [type] :as part}]
+  (case (keyword type)
+    :text (ChatCompletionContentPart/ofText (->chat-content-part-text part))
+    :image (ChatCompletionContentPart/ofImageUrl (->chat-content-part-image part))
+    :input-audio (ChatCompletionContentPart/ofInputAudio (->chat-content-part-input-audio part))
+    (throw (ex-info (str "Unknown chat content type " type)
+                    {:openai/error :unknown-content-type :type type}))))
+
+(defn- ->chat-message-tool-call ^ChatCompletionMessageToolCall [{:keys [id type function]}]
+  (case (keyword type)
+    :function
+    (let [{:keys [name arguments]} function
+          ^ChatCompletionMessageFunctionToolCall$Function$Builder fb
+          (ChatCompletionMessageFunctionToolCall$Function/builder)
+          ^ChatCompletionMessageFunctionToolCall$Builder b
+          (ChatCompletionMessageFunctionToolCall/builder)]
+      (when-not id (missing-key! :id))
+      (when-not name (missing-key! :name))
+      (.name fb ^String name)
+      (.arguments fb ^String (encode-output arguments))
+      (.id b ^String id)
+      (.type b (JsonValue/from "function"))
+      (.function b (.build fb))
+      (ChatCompletionMessageToolCall/ofFunction (.build b)))
+    (throw (ex-info (str "Unknown chat tool call type " type)
+                    {:openai/error :unknown-tool-call-type :type type}))))
+
+(defn- ->chat-system-message ^ChatCompletionMessageParam [{:keys [content]}]
+  (let [^ChatCompletionSystemMessageParam$Builder b (ChatCompletionSystemMessageParam/builder)]
+    (when-not content (missing-key! :content))
+    (if (string? content)
+      (.content b ^String content)
+      (.contentOfArrayOfContentParts b ^java.util.List (mapv ->chat-content-part-text content)))
+    (ChatCompletionMessageParam/ofSystem (.build b))))
+
+(defn- ->chat-developer-message ^ChatCompletionMessageParam [{:keys [content]}]
+  (let [^ChatCompletionDeveloperMessageParam$Builder b (ChatCompletionDeveloperMessageParam/builder)]
+    (when-not content (missing-key! :content))
+    (if (string? content)
+      (.content b ^String content)
+      (.contentOfArrayOfContentParts b ^java.util.List (mapv ->chat-content-part-text content)))
+    (ChatCompletionMessageParam/ofDeveloper (.build b))))
+
+(defn- ->chat-user-message ^ChatCompletionMessageParam [{:keys [content]}]
+  (let [^ChatCompletionUserMessageParam$Builder b (ChatCompletionUserMessageParam/builder)]
+    (when-not content (missing-key! :content))
+    (if (string? content)
+      (.content b ^String content)
+      (.contentOfArrayOfContentParts b ^java.util.List (mapv ->chat-content-part content)))
+    (ChatCompletionMessageParam/ofUser (.build b))))
+
+(defn- ->chat-assistant-message ^ChatCompletionMessageParam [{:keys [content tool-calls refusal]}]
+  (let [^ChatCompletionAssistantMessageParam$Builder b (ChatCompletionAssistantMessageParam/builder)]
+    (when content (.content b ^String content))
+    (when refusal (.refusal b ^String refusal))
+    (when (seq tool-calls) (.toolCalls b ^java.util.List (mapv ->chat-message-tool-call tool-calls)))
+    (ChatCompletionMessageParam/ofAssistant (.build b))))
+
+(defn- ->chat-tool-message ^ChatCompletionMessageParam [{:keys [tool-call-id content]}]
+  (let [^ChatCompletionToolMessageParam$Builder b (ChatCompletionToolMessageParam/builder)]
+    (when-not tool-call-id (missing-key! :tool-call-id))
+    (when-not content (missing-key! :content))
+    (.toolCallId b ^String tool-call-id)
+    (.content b ^String content)
+    (ChatCompletionMessageParam/ofTool (.build b))))
+
+(defn- ->chat-message ^ChatCompletionMessageParam [{:keys [role] :as m}]
+  (when-not role (missing-key! :role))
+  (case (keyword role)
+    :system (->chat-system-message m)
+    :developer (->chat-developer-message m)
+    :user (->chat-user-message m)
+    :assistant (->chat-assistant-message m)
+    :tool (->chat-tool-message m)
+    (throw (ex-info (str "Unknown chat message role " role)
+                    {:openai/error :unknown-role :role role}))))
+
+(defn- ->chat-function-parameters ^FunctionParameters [m]
+  (let [^FunctionTool$Parameters rp (->function-parameters m)
+        ^FunctionParameters$Builder b (FunctionParameters/builder)]
+    (.additionalProperties b ^java.util.Map (._additionalProperties rp))
+    (.build b)))
+
+(defn- ->chat-function-definition ^FunctionDefinition [{:keys [name description parameters strict]}]
+  (let [^FunctionDefinition$Builder b (FunctionDefinition/builder)]
+    (when-not name (missing-key! :name))
+    (.name b ^String name)
+    (when description (.description b ^String description))
+    (when parameters (.parameters b (->chat-function-parameters parameters)))
+    (when (some? strict) (.strict b (boolean strict)))
+    (.build b)))
+
+(defn- ->chat-function-tool ^ChatCompletionFunctionTool [tool]
+  (let [^ChatCompletionFunctionTool$Builder b (ChatCompletionFunctionTool/builder)]
+    (.type b (JsonValue/from "function"))
+    (.function b (->chat-function-definition tool))
+    (.build b)))
+
+(defn- ->chat-tool ^ChatCompletionTool [{:keys [type] :as tool}]
+  (case (keyword type)
+    :function (ChatCompletionTool/ofFunction (->chat-function-tool tool))
+    (throw (ex-info (str "Unknown chat tool type " type)
+                    {:openai/error :unknown-tool-type :type type}))))
+
+(defn- ->chat-tool-choice-option ^ChatCompletionToolChoiceOption [choice]
+  (ChatCompletionToolChoiceOption/ofAuto (ChatCompletionToolChoiceOption$Auto/of (name choice))))
+
+(defn- ->chat-named-tool-choice ^ChatCompletionNamedToolChoice [{:keys [name]}]
+  (let [^ChatCompletionNamedToolChoice$Function$Builder fb
+        (ChatCompletionNamedToolChoice$Function/builder)
+        ^ChatCompletionNamedToolChoice$Builder b (ChatCompletionNamedToolChoice/builder)]
+    (when-not name (missing-key! :name))
+    (.name fb ^String name)
+    (.type b (JsonValue/from "function"))
+    (.function b (.build fb))
+    (.build b)))
+
+(defn- ->chat-tool-choice ^ChatCompletionToolChoiceOption [choice]
+  (if (map? choice)
+    (case (keyword (:type choice))
+      :function (ChatCompletionToolChoiceOption/ofNamedToolChoice (->chat-named-tool-choice choice))
+      (throw (ex-info (str "Unknown chat tool choice type " (:type choice))
+                      {:openai/error :unknown-tool-choice-type
+                       :type (:type choice)})))
+    (->chat-tool-choice-option choice)))
+
+(defn- ->chat-response-format ^ChatCompletionCreateParams$ResponseFormat [{:keys [type json-schema]}]
+  (case (keyword type)
+    :json-object
+    (ChatCompletionCreateParams$ResponseFormat/ofJsonObject
+     (let [^ResponseFormatJsonObject$Builder b (ResponseFormatJsonObject/builder)]
+       (.type b (JsonValue/from "json_object"))
+       (.build b)))
+    :json-schema
+    (let [{:keys [name schema strict description]} json-schema
+          ^ResponseFormatJsonSchema$JsonSchema$Schema$Builder sb
+          (ResponseFormatJsonSchema$JsonSchema$Schema/builder)
+          ^ResponseFormatJsonSchema$JsonSchema$Builder jsb
+          (ResponseFormatJsonSchema$JsonSchema/builder)
+          ^ResponseFormatJsonSchema$Builder rb
+          (ResponseFormatJsonSchema/builder)]
+      (when-not name (missing-key! :name))
+      (when-not schema (missing-key! :schema))
+      (.additionalProperties sb ^java.util.Map (->json-schema-properties schema))
+      (.name jsb ^String name)
+      (.schema jsb (.build sb))
+      (when description (.description jsb ^String description))
+      (when (some? strict) (.strict jsb (boolean strict)))
+      (.type rb (JsonValue/from "json_schema"))
+      (.jsonSchema rb (.build jsb))
+      (ChatCompletionCreateParams$ResponseFormat/ofJsonSchema (.build rb)))
+    (throw (ex-info (str "Unknown chat response format " type)
+                    {:openai/error :unknown-response-format :type type}))))
+
+(defn- ->chat-stream-options ^ChatCompletionStreamOptions [{:keys [include-usage]}]
+  (let [^ChatCompletionStreamOptions$Builder b (ChatCompletionStreamOptions/builder)]
+    (when (some? include-usage) (.includeUsage b (boolean include-usage)))
+    (.build b)))
+
+(defn- ->chat-params ^ChatCompletionCreateParams
+  [{:keys [model messages temperature top-p max-tokens max-completion-tokens n stop
+           presence-penalty frequency-penalty logit-bias seed user metadata store
+           service-tier parallel-tool-calls logprobs top-logprobs tools tool-choice
+           response-format reasoning-effort stream-options]}]
+  (when-not model (missing-key! :model))
+  (when-not messages (missing-key! :messages))
+  (let [^ChatCompletionCreateParams$Builder b (ChatCompletionCreateParams/builder)]
+    (.model b ^String model)
+    (.messages b ^java.util.List (mapv ->chat-message messages))
+    (when temperature (.temperature b (double temperature)))
+    (when top-p (.topP b (double top-p)))
+    (when max-tokens (.maxTokens b (long max-tokens)))
+    (when max-completion-tokens (.maxCompletionTokens b (long max-completion-tokens)))
+    (when n (.n b (long n)))
+    (when stop
+      (if (string? stop)
+        (.stop b ^String stop)
+        (.stopOfStrings b ^java.util.List (vec stop))))
+    (when presence-penalty (.presencePenalty b (double presence-penalty)))
+    (when frequency-penalty (.frequencyPenalty b (double frequency-penalty)))
+    (when logit-bias (.logitBias b (->chat-logit-bias logit-bias)))
+    (when seed (.seed b (long seed)))
+    (when user (.user b ^String user))
+    (when metadata (.metadata b (->chat-metadata metadata)))
+    (when (some? store) (.store b (boolean store)))
+    (when service-tier (.serviceTier b (ChatCompletionCreateParams$ServiceTier/of (enum-name service-tier))))
+    (when (some? parallel-tool-calls) (.parallelToolCalls b (boolean parallel-tool-calls)))
+    (when (some? logprobs) (.logprobs b (boolean logprobs)))
+    (when top-logprobs (.topLogprobs b (long top-logprobs)))
+    (when reasoning-effort (.reasoningEffort b (ReasoningEffort/of (name reasoning-effort))))
+    (doseq [t tools] (.addTool b (->chat-tool t)))
+    (when tool-choice (.toolChoice b (->chat-tool-choice tool-choice)))
+    (when response-format (.responseFormat b (->chat-response-format response-format)))
+    (when stream-options (.streamOptions b (->chat-stream-options stream-options)))
+    (.build b)))
+
+(defn- completion-usage->map [^CompletionUsage u]
+  {:prompt-tokens (.promptTokens u)
+   :completion-tokens (.completionTokens u)
+   :total-tokens (.totalTokens u)})
+
+(defn- chat-message-tool-call->map [^ChatCompletionMessageToolCall c]
+  (cond
+    (.isFunction c) (let [^ChatCompletionMessageFunctionToolCall f (.asFunction c)
+                          ^ChatCompletionMessageFunctionToolCall$Function fnc (.function f)]
+                      {:id (.id f)
+                       :type :function
+                       :function {:name (.name fnc)
+                                  :arguments (parse-arguments (.arguments fnc))}})
+    :else {:type :unknown}))
+
+(defn- chat-message->map [^ChatCompletionMessage m]
+  (cond-> {:role (->keyword (.asStringOrThrow (._role m)))}
+    (.isPresent (.content m)) (assoc :content (.get (.content m)))
+    (.isPresent (.toolCalls m)) (assoc :tool-calls (mapv chat-message-tool-call->map (.get (.toolCalls m))))
+    (.isPresent (.refusal m)) (assoc :refusal (.get (.refusal m)))))
+
+(defn- chat-choice->map [^ChatCompletion$Choice c]
+  {:index (.index c)
+   :finish-reason (->keyword (.asString ^ChatCompletion$Choice$FinishReason (.finishReason c)))
+   :message (chat-message->map (.message c))})
+
+(defn- chat-output-text [choices]
+  (or (some (fn [choice] (get-in choice [:message :content])) choices)
+      ""))
+
+(defn- chat-completion->map [^ChatCompletion r]
+  (let [choices (mapv chat-choice->map (.choices r))]
+    (cond-> {:id (.id r)
+             :model (.model r)
+             :created (.created r)
+             :choices choices
+             :text (chat-output-text choices)}
+      (.isPresent (.usage r)) (assoc :usage (completion-usage->map (.get (.usage r))))
+      (.isPresent (.serviceTier r)) (assoc :service-tier (->keyword (.asString ^ChatCompletion$ServiceTier (.get (.serviceTier r))))))))
+
+(defn- chat-delta-tool-call->map [^ChatCompletionChunk$Choice$Delta$ToolCall c]
+  (cond-> {:index (.index c)}
+    (.isPresent (.id c)) (assoc :id (.get (.id c)))
+    (.isPresent (.type c)) (assoc :type (->keyword (.asString ^ChatCompletionChunk$Choice$Delta$ToolCall$Type (.get (.type c)))))
+    (.isPresent (.function c)) (assoc :function
+                                      (let [^ChatCompletionChunk$Choice$Delta$ToolCall$Function f
+                                            (.get (.function c))]
+                                        (cond-> {}
+                                          (.isPresent (.name f)) (assoc :name (.get (.name f)))
+                                          (.isPresent (.arguments f)) (assoc :arguments (.get (.arguments f))))))))
+
+(defn- chat-delta->map [^ChatCompletionChunk$Choice$Delta d]
+  (cond-> {}
+    (.isPresent (.role d)) (assoc :role (->keyword (.asString ^ChatCompletionChunk$Choice$Delta$Role (.get (.role d)))))
+    (.isPresent (.content d)) (assoc :content (.get (.content d)))
+    (.isPresent (.toolCalls d)) (assoc :tool-calls (mapv chat-delta-tool-call->map (.get (.toolCalls d))))))
+
+(defn- chat-chunk-choice->map [^ChatCompletionChunk$Choice c]
+  (cond-> {:index (.index c)
+           :delta (chat-delta->map (.delta c))}
+    (.isPresent (.finishReason c)) (assoc :finish-reason (->keyword (.asString ^ChatCompletionChunk$Choice$FinishReason (.get (.finishReason c)))))))
+
+(defn- chat-chunk->map [^ChatCompletionChunk chunk]
+  (cond-> {:type :chunk
+           :choices (mapv chat-chunk-choice->map (.choices chunk))}
+    (.isPresent (.usage chunk)) (assoc :usage (completion-usage->map (.get (.usage chunk))))))
+
+(defn- drain-chat-stream
+  ^String [^StreamResponse sr on-event]
+  (let [sb (StringBuilder.)]
+    (doseq [chunk (iterator-seq (.iterator (.stream sr)))]
+      (let [m (chat-chunk->map chunk)]
+        (doseq [choice (:choices m)]
+          (when-let [content (get-in choice [:delta :content])]
+            (.append sb ^String content)))
+        (when on-event (on-event m))))
+    (str sb)))
+
+(defn create-chat-completion
+  "Send a Chat Completions API request and return a Clojure map.
+
+  Request keys: `:model` (required string), `:messages` (required vector),
+  `:temperature`, `:top-p`, `:max-tokens`, `:max-completion-tokens`, `:n`,
+  `:stop`, `:presence-penalty`, `:frequency-penalty`, `:logit-bias`, `:seed`,
+  `:user`, `:metadata`, `:store`, `:service-tier`, `:parallel-tool-calls`,
+  `:logprobs`, `:top-logprobs`, `:tools`, `:tool-choice`, `:response-format`,
+  `:reasoning-effort`, and `:stream-options`.
+
+  Message items accept `{:role :system|:developer|:user|:assistant|:tool
+  :content \"...\"}`. User content may be a vector of text, image, or
+  input-audio part maps. Assistant messages may include `:tool-calls`; tool
+  messages require `:tool-call-id`.
+
+  Returns `{:id :model :created :choices :usage :text}` plus `:service-tier`
+  when present. This is the compatibility path for OpenAI-compatible endpoints
+  that do not support the Responses API."
+  [^OpenAIClient client req]
+  (with-api-errors
+    (let [^ChatService chat (.chat client)
+          ^ChatCompletionService svc (.completions chat)]
+      (chat-completion->map (.create svc (->chat-params req))))))
+
+(defn stream-chat-completion
+  "Stream a Chat Completions API request, invoking `on-event` with a normalized
+  chunk map as it arrives, and returning the concatenated content deltas. Takes
+  the same `req` map as `create-chat-completion`. The underlying HTTP stream is
+  closed automatically."
+  ^String [^OpenAIClient client req on-event]
+  (with-api-errors
+    (let [^ChatService chat (.chat client)
+          ^ChatCompletionService svc (.completions chat)]
+      (with-open [^StreamResponse sr (.createStreaming svc (->chat-params req))]
+        (drain-chat-stream sr on-event)))))
+
+(defn stream-chat-completion-text
+  "Stream a Chat Completions API request, calling `on-text` with each content
+  delta string as it arrives, and returning the full concatenated text."
+  ^String [^OpenAIClient client req on-text]
+  (stream-chat-completion
+   client req
+   (fn [m]
+     (doseq [choice (:choices m)]
+       (when-let [content (get-in choice [:delta :content])]
+         (when on-text (on-text content)))))))
 
 (defn get-response
   "Retrieve one stored response by id as a response map."
