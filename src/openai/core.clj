@@ -345,7 +345,7 @@
     (throw (ex-info (str "Unknown content type " type)
                     {:openai/error :unknown-content-type :type type}))))
 
-(defn- ->input-message ^ResponseInputItem [{:keys [role content type] :as item}]
+(defn response-input-item ^ResponseInputItem [{:keys [role content type] :as item}]
   (if (= :function-call-output (keyword type))
     (->function-call-output item)
     (let [^EasyInputMessage$Builder b (EasyInputMessage/builder)]
@@ -362,7 +362,7 @@
   (if (string? input)
     (ResponseCreateParams$Input/ofText input)
     (ResponseCreateParams$Input/ofResponse
-     ^java.util.List (mapv ->input-message input))))
+     ^java.util.List (mapv response-input-item input))))
 
 (defn- ->reasoning ^Reasoning [{:keys [effort]}]
   (let [^Reasoning$Builder b (Reasoning/builder)]
@@ -601,7 +601,7 @@
     (when input
       (if (string? input)
         (.input b ^String input)
-        (.inputOfResponseInputItems b ^java.util.List (mapv ->input-message input))))
+        (.inputOfResponseInputItems b ^java.util.List (mapv response-input-item input))))
     (when instructions (.instructions b ^String instructions))
     (when previous-response-id (.previousResponseId b ^String previous-response-id))
     (when reasoning (.reasoning b (->reasoning reasoning)))

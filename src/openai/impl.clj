@@ -89,6 +89,9 @@
         (map (fn [[k v]] [k (JsonValue/from v)]))
         (walk/stringify-keys m)))
 
+(defn json-value->clj [^JsonValue value]
+  (walk/keywordize-keys (.convert value Object)))
+
 (defn all-pages
   "Realize every element across all pages of an SDK *ListPage via its autoPager."
   [page]
