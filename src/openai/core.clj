@@ -21,6 +21,7 @@
                               FunctionParameters$Builder
                               Reasoning
                               Reasoning$Builder
+                              Reasoning$Mode
                               ReasoningEffort
                               ResponseFormatJsonObject
                               ResponseFormatJsonObject$Builder
@@ -168,6 +169,9 @@
                                          ResponseCreateParams$Input
                                          ResponseCreateParams$Metadata
                                          ResponseCreateParams$Metadata$Builder
+                                         ResponseCreateParams$PromptCacheOptions
+                                         ResponseCreateParams$PromptCacheOptions$Mode
+                                         ResponseCreateParams$PromptCacheOptions$Ttl
                                          ResponseCreateParams$ServiceTier
                                          ResponseCreateParams$ToolChoice
                                          ResponseCreateParams$Truncation
@@ -365,9 +369,17 @@
     (ResponseCreateParams$Input/ofResponse
      ^java.util.List (mapv response-input-item input))))
 
-(defn- ->reasoning ^Reasoning [{:keys [effort]}]
+(defn- ->reasoning ^Reasoning [{:keys [effort mode]}]
   (let [^Reasoning$Builder b (Reasoning/builder)]
     (when effort (.effort b (ReasoningEffort/of (name effort))))
+    (when mode (.mode b (Reasoning$Mode/of (name mode))))
+    (.build b)))
+
+(defn- ->prompt-cache-options ^ResponseCreateParams$PromptCacheOptions
+  [{:keys [mode ttl]}]
+  (let [b (ResponseCreateParams$PromptCacheOptions/builder)]
+    (when mode (.mode b (ResponseCreateParams$PromptCacheOptions$Mode/of (name mode))))
+    (when ttl (.ttl b (ResponseCreateParams$PromptCacheOptions$Ttl/of (name ttl))))
     (.build b)))
 
 (defn- ->function-parameters ^FunctionTool$Parameters [m]
@@ -527,6 +539,7 @@
     :file-search (Tool/ofFileSearch (->file-search-tool tool))
     :mcp (Tool/ofMcp (->mcp-tool tool))
     :code-interpreter (Tool/ofCodeInterpreter (->code-interpreter tool))
+    :programmatic-tool-calling (Tool/ofProgrammaticToolCalling)
     (throw (ex-info (str "Unknown tool type " type)
                     {:openai/error :unknown-tool-type :type type}))))
 
@@ -550,6 +563,8 @@
     (case (keyword (:type choice))
       :function (ResponseCreateParams$ToolChoice/ofFunction
                  (->tool-choice-function choice))
+      :programmatic-tool-calling
+      (ResponseCreateParams$ToolChoice/ofSpecificProgrammaticToolCallingParam)
       (throw (ex-info (str "Unknown tool choice type " (:type choice))
                       {:openai/error :unknown-tool-choice-type
                        :type (:type choice)})))
@@ -558,7 +573,7 @@
 (defn- ->params ^ResponseCreateParams
   [{:keys [model input instructions max-output-tokens temperature top-p
            metadata previous-response-id store reasoning user tools tool-choice
-           parallel-tool-calls background include truncation prompt-cache-key
+           parallel-tool-calls background include truncation prompt-cache-key prompt-cache-options
            safety-identifier service-tier max-tool-calls top-logprobs
            json-schema verbosity conversation stream-options moderation]}]
   (when-not model (impl/missing-key! :model))
@@ -576,6 +591,7 @@
     (doseq [i include] (.addInclude b (ResponseIncludable/of (impl/enum-name i))))
     (when truncation (.truncation b (ResponseCreateParams$Truncation/of (impl/enum-name truncation))))
     (when prompt-cache-key (.promptCacheKey b ^String prompt-cache-key))
+    (when prompt-cache-options (.promptCacheOptions b (->prompt-cache-options prompt-cache-options)))
     (when safety-identifier (.safetyIdentifier b ^String safety-identifier))
     (when service-tier (.serviceTier b (ResponseCreateParams$ServiceTier/of (impl/enum-name service-tier))))
     (when metadata (.metadata b (->metadata metadata)))
@@ -779,9 +795,13 @@
     :else {:type :unknown}))
 
 (defn- usage->map [^ResponseUsage u]
-  {:input-tokens (.inputTokens u)
-   :output-tokens (.outputTokens u)
-   :total-tokens (.totalTokens u)})
+  (let [details (.inputTokensDetails u)]
+    {:input-tokens (.inputTokens u)
+     :input-tokens-details
+     {:cache-write-tokens (.cacheWriteTokens details)
+      :cached-tokens (.cachedTokens details)}
+     :output-tokens (.outputTokens u)
+     :total-tokens (.totalTokens u)}))
 
 (defn- error->map [^ResponseError e]
   {:code (impl/->keyword (.asString (.code e)))

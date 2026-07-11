@@ -191,12 +191,13 @@
                              :message.output-text.logprobs]
                    :truncation :auto
                    :prompt-cache-key "cache-key"
+                   :prompt-cache-options {:mode :standard :ttl :24h}
                    :safety-identifier "safe-user"
                    :service-tier :priority
                    :previous-response-id "resp_123"
                    :store false
                    :user "end-user-id"
-                   :reasoning {:effort :medium}})]
+                   :reasoning {:effort :medium :mode :pro}})]
     (is (= "follow these" (opt (.instructions p))))
     (is (= 512 (opt (.maxOutputTokens p))))
     (is (= 7 (opt (.maxToolCalls p))))
@@ -208,12 +209,15 @@
            (mapv #(.asString %) (opt (.include p)))))
     (is (= "auto" (.asString (opt (.truncation p)))))
     (is (= "cache-key" (opt (.promptCacheKey p))))
+    (is (= "standard" (-> p .promptCacheOptions opt .mode opt .asString)))
+    (is (= "24h" (-> p .promptCacheOptions opt .ttl opt .asString)))
     (is (= "safe-user" (opt (.safetyIdentifier p))))
     (is (= "priority" (.asString (opt (.serviceTier p)))))
     (is (= "resp_123" (opt (.previousResponseId p))))
     (is (false? (opt (.store p))))
     (is (= "end-user-id" (opt (.user p))))
-    (is (= "medium" (-> p .reasoning opt .effort opt .asString)))))
+    (is (= "medium" (-> p .reasoning opt .effort opt .asString)))
+    (is (= "pro" (-> p .reasoning opt .mode opt .asString)))))
 
 (deftest translates-metadata
   (let [p (params {:model "gpt-5.2"
@@ -326,6 +330,11 @@
                                          :tools [{:type :code-interpreter
                                                   :container "cntr_123"}]}))))]
       (is (= "cntr_123" (.asString (.container (.asCodeInterpreter t)))))))
+  (testing "programmatic tool calling"
+    (let [t (first (opt (.tools (params {:model "gpt-5.6-sol"
+                                         :input "hi"
+                                         :tools [{:type :programmatic-tool-calling}]}))))]
+      (is (.isProgrammaticToolCalling t))))
   (testing "unknown tool type"
     (is (= {:openai/error :unknown-tool-type :type :bogus}
            (ex-data-for #(params {:model "gpt-5.2"
@@ -347,7 +356,10 @@
                                    :tool-choice {:type :function
                                                  :name "get_weather"}})))]
     (is (.isFunction tc))
-    (is (= "get_weather" (.name (.asFunction tc))))))
+    (is (= "get_weather" (.name (.asFunction tc)))))
+  (let [tc (opt (.toolChoice (params {:model "gpt-5.6-sol" :input "hi"
+                                      :tool-choice {:type :programmatic-tool-calling}})))]
+    (is (.isSpecificProgrammaticToolCallingParam tc))))
 
 (deftest translates-parallel-tool-calls
   (let [p (params {:model "gpt-5.2"
@@ -623,6 +635,7 @@
       (.usage (-> (ResponseUsage/builder)
                   (.inputTokens 10)
                   (.inputTokensDetails (-> (ResponseUsage$InputTokensDetails/builder)
+                                           (.cacheWriteTokens 0)
                                            (.cachedTokens 0)
                                            (.build)))
                   (.outputTokens 20)
@@ -655,7 +668,9 @@
     (is (= "gpt-5.2" (:model m)))
     (is (= :completed (:status m)))
     (is (= 1234.5 (:created-at m)))
-    (is (= {:input-tokens 10 :output-tokens 20 :total-tokens 30}
+    (is (= {:input-tokens 10
+            :input-tokens-details {:cache-write-tokens 0 :cached-tokens 0}
+            :output-tokens 20 :total-tokens 30}
            (:usage m)))
     (is (= "Hello, world" (:text m)))
     (is (= [{:type :message
