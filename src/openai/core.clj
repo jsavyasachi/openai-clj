@@ -284,7 +284,7 @@
   `:max-retries`, and `:azure-service-version` (an Azure OpenAI api-version
   string, used together with an Azure `:base-url`)."
   (^OpenAIClient [] (OpenAIOkHttpClient/fromEnv))
-  (^OpenAIClient [{:keys [api-key organization project base-url timeout-ms max-retries
+  (^OpenAIClient [{:keys [api-key organization project base-url timeout-ms max-retries webhook-secret
                           azure-service-version]}]
    (let [^OpenAIOkHttpClient$Builder b (OpenAIOkHttpClient/builder)]
      (when api-key (.apiKey b ^String api-key))
@@ -293,6 +293,7 @@
      (when base-url (.baseUrl b ^String base-url))
      (when timeout-ms (.timeout b (Duration/ofMillis (long timeout-ms))))
      (when max-retries (.maxRetries b (int max-retries)))
+     (when webhook-secret (.webhookSecret b ^String webhook-secret))
      (when azure-service-version
        (.azureServiceVersion b (AzureOpenAIServiceVersion/fromString ^String azure-service-version)))
      (.build b))))
