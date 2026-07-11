@@ -1,6 +1,6 @@
 (ns openai.core
-  "Idiomatic Clojure wrapper over the official OpenAI Java SDK
-  (`com.openai/openai-java`), focused on the Responses API."
+  "Core client plus Responses, Chat Completions, embeddings, files, batches,
+  and models. Additional stable APIs live in sibling `openai.*` namespaces."
   (:require [clojure.walk :as walk]
             [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)

@@ -1,38 +1,45 @@
 # openai-clj
 
-[![Clojars Project](https://img.shields.io/clojars/v/net.clojars.savya/openai-clj.svg)](https://clojars.org/net.clojars.savya/openai-clj)
-[![cljdoc](https://cljdoc.org/badge/net.clojars.savya/openai-clj)](https://cljdoc.org/d/net.clojars.savya/openai-clj/CURRENT)
-[![test](https://github.com/jsavyasachi/openai-clj/actions/workflows/test.yml/badge.svg)](https://github.com/jsavyasachi/openai-clj/actions/workflows/test.yml)
-
-Idiomatic Clojure wrapper over the official OpenAI Java SDK, focused on the
-Responses API.
+Idiomatic Clojure wrapper over the stable OpenAI API surface exposed by the
+official Java SDK.
 
 ## Stack
 
-<a href="https://clojure.org"><img src="https://img.shields.io/badge/Clojure-5881D8?style=flat&logo=clojure&logoColor=fff" alt="Clojure" /></a>
-<a href="https://platform.openai.com/docs/api-reference/responses"><img src="https://img.shields.io/badge/OpenAI-412991?style=flat&logo=openai&logoColor=fff" alt="OpenAI" /></a>
+<a href="https://clojure.org"><img src="https://img.shields.io/badge/Clojure-5881D8?style=flat&logo=clojure&logoColor=white" alt="Clojure" /></a>
+<a href="https://platform.openai.com/docs/api-reference"><img src="https://img.shields.io/badge/OpenAI-412991?style=flat&logo=openai&logoColor=white" alt="OpenAI" /></a>
+
+[![Clojars Project](https://img.shields.io/clojars/v/net.clojars.savya/openai-clj.svg)](https://clojars.org/net.clojars.savya/openai-clj)
+[![cljdoc](https://cljdoc.org/badge/net.clojars.savya/openai-clj)](https://cljdoc.org/d/net.clojars.savya/openai-clj/CURRENT)
+[![test](https://github.com/jsavyasachi/openai-clj/actions/workflows/test.yml/badge.svg)](https://github.com/jsavyasachi/openai-clj/actions/workflows/test.yml)
 
 ## Installation
 
 deps.edn:
 
 ```clojure
-net.clojars.savya/openai-clj {:mvn/version "0.6.0"}
+net.clojars.savya/openai-clj {:mvn/version "0.7.0"}
 ```
 
 Leiningen:
 
 ```clojure
-[net.clojars.savya/openai-clj "0.6.0"]
+[net.clojars.savya/openai-clj "0.7.0"]
 ```
 
-Tracks [`com.openai/openai-java` 4.41.0](https://github.com/openai/openai-java/releases/tag/v4.41.0).
+Tracks [`com.openai/openai-java` 4.42.0](https://github.com/openai/openai-java/releases/tag/v4.42.0).
 
 ## Documentation
 
 - [Tools](doc/tools.md)
 - [Streaming](doc/streaming.md)
 - [Embeddings, Files and Batches](doc/embeddings-files-batches.md)
+- [Images and Audio](doc/images-and-audio.md)
+- [Vector Stores](doc/vector-stores.md)
+- [Fine-tuning](doc/fine-tuning.md)
+- [Evals](doc/evals.md)
+- [Admin](doc/admin.md)
+- [Webhooks](doc/webhooks.md)
+- [Skills, Videos, Containers, Uploads and Conversations](doc/additional-apis.md)
 - [Azure OpenAI](doc/azure.md)
 - [Responses and Errors](doc/responses-and-errors.md)
 - [Migrating from wkok/openai-clojure](doc/migrating.md)
@@ -164,16 +171,55 @@ normalized chunk:
  println)
 ```
 
-## Scope
+## API namespaces
 
-In scope: Responses API, Chat Completions compatibility, structured outputs,
-multimodal input parts, response streaming, response lifecycle subservices,
-response compaction, token counting, built-in Responses tools, MCP tools,
-client options (including Azure OpenAI endpoints), embeddings, files, batches,
-and models.
+All functions take an `openai.core/client` as their first argument and accept
+kebab-case request maps.
 
-Out of scope: images API, audio output, realtime, and stored Chat Completions
-CRUD.
+```clojure
+(require '[openai.images :as images]
+         '[openai.audio :as audio]
+         '[openai.moderations :as moderations]
+         '[openai.completions :as completions]
+         '[openai.vector-stores :as vector-stores]
+         '[openai.uploads :as uploads]
+         '[openai.containers :as containers]
+         '[openai.conversations :as conversations]
+         '[openai.fine-tuning :as fine-tuning]
+         '[openai.evals :as evals]
+         '[openai.skills :as skills]
+         '[openai.videos :as videos]
+         '[openai.webhooks :as webhooks]
+         '[openai.admin :as admin]
+         '[openai.admin.projects :as admin-projects])
+
+(images/generate client {:model "gpt-image-1" :prompt "A Clojure logo"})
+(audio/create-speech client {:model "gpt-4o-mini-tts" :voice :alloy
+                             :input "Hello"})
+(moderations/create client {:input "text"})
+(completions/create client {:model "gpt-3.5-turbo-instruct" :prompt "Once"})
+(vector-stores/create client {:name "docs" :file-ids ["file_..."]})
+(uploads/create client {:filename "data.jsonl" :bytes 100
+                        :mime-type "application/jsonl" :purpose :fine-tune})
+(containers/create client {:name "sandbox"})
+(conversations/create client {:items [{:role :user :content "Hello"}]})
+(fine-tuning/create-job client {:model "gpt-4.1-mini"
+                                :training-file "file_..."})
+(evals/list client {:limit 20})
+(skills/list client {:limit 20})
+(videos/create client {:model "sora-2" :prompt "Ocean sunrise"
+                       :size "1280x720" :seconds "8"})
+(webhooks/unwrap webhook-client raw-body request-headers)
+(admin/project-list admin-client {:limit 20})
+(admin-projects/service-account-list admin-client {:project-id "proj_..."})
+```
+
+`openai.core` also contains Responses, Chat Completions, embeddings, files,
+batches, models, and stored Chat Completions. `openai.graders` reflects the
+stable grader-model service, which exposes no operations in SDK 4.42.0.
+
+Out of scope: beta APIs, realtime WebSockets, async clients, raw-response
+accessors, and per-call `RequestOptions`.
 
 ## Running tests
 
