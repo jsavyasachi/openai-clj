@@ -24,7 +24,8 @@
                                                ChatCompletionMessageFunctionToolCall
                                                ChatCompletionMessageFunctionToolCall$Function
                                                ChatCompletionMessageToolCall
-                                               ChatCompletionMessageParam)
+                                               ChatCompletionMessageParam
+                                               ChatCompletionStoreMessage)
            (com.openai.models.completions CompletionUsage)
            (com.openai.models.models Model)
            (com.openai.models.responses ResponseCreateParams
@@ -107,6 +108,27 @@
 
 (defn- chat-chunk->map [x]
   (#'openai/chat-chunk->map x))
+
+(defn- model-delete-params [id]
+  (#'openai/->model-delete-params id))
+
+(defn- chat-completion-update-params [id opts]
+  (#'openai/->chat-completion-update-params id opts))
+
+(defn- chat-completion-list-params [opts]
+  (#'openai/->chat-completion-list-params opts))
+
+(defn- chat-completion-message-list-params [id opts]
+  (#'openai/->chat-completion-message-list-params id opts))
+
+(defn- stored-chat-message->map [x]
+  (#'openai/stored-chat-message->map x))
+
+(defn- deleted-model->map [x]
+  (#'openai/deleted-model->map x))
+
+(defn- deleted-chat-completion->map [x]
+  (#'openai/deleted-chat-completion->map x))
 
 (defn- opt [o]
   (when (.isPresent ^java.util.Optional o)
@@ -1456,3 +1478,57 @@
                     :completion-tokens 2
                     :total-tokens 3}}
            (chat-chunk->map chunk)))))
+
+(deftest builds-stored-resource-params
+  (let [model-p (model-delete-params "ft:model")
+        update-p (chat-completion-update-params "chatcmpl_1" {:metadata {:team "sdk"}})
+        list-p (chat-completion-list-params {:model "gpt-4o-mini"
+                                             :metadata {:team "sdk"}
+                                             :after "chatcmpl_0"
+                                             :limit 25
+                                             :order :asc})
+        messages-p (chat-completion-message-list-params "chatcmpl_1"
+                                                        {:after "msg_0" :limit 10 :order :desc})]
+    (is (= "ft:model" (opt (.model model-p))))
+    (is (= "chatcmpl_1" (opt (.completionId update-p))))
+    (is (= "sdk" (-> update-p .metadata opt ._additionalProperties (get "team") .asStringOrThrow)))
+    (is (= "gpt-4o-mini" (opt (.model list-p))))
+    (is (= ["sdk"] (-> list-p .metadata opt ._additionalProperties (.values "team"))))
+    (is (= "chatcmpl_0" (opt (.after list-p))))
+    (is (= 25 (opt (.limit list-p))))
+    (is (= "asc" (-> list-p .order opt .asString)))
+    (is (= "chatcmpl_1" (opt (.completionId messages-p))))
+    (is (= "msg_0" (opt (.after messages-p))))
+    (is (= 10 (opt (.limit messages-p))))
+    (is (= "desc" (-> messages-p .order opt .asString)))))
+
+(deftest maps-stored-resource-results
+  (is (= {:id "ft:model" :deleted true}
+         (deleted-model->map (-> (com.openai.models.models.ModelDeleted/builder)
+                                 (.id "ft:model")
+                                 (.deleted true)
+                                 (.object_ "model")
+                                 (.build)))))
+  (is (= {:id "chatcmpl_1" :deleted false}
+         (deleted-chat-completion->map
+          (-> (com.openai.models.chat.completions.ChatCompletionDeleted/builder)
+              (.id "chatcmpl_1")
+              (.deleted false)
+              (.object_ (com.openai.core.JsonValue/from "chat.completion.deleted"))
+              (.build)))))
+  (is (= {:id "msg_1"
+          :role :assistant
+          :content "Calling a tool"
+          :refusal "no"
+          :tool-calls [{:id "call_1"
+                        :type :function
+                        :function {:name "get_weather"
+                                   :arguments {:location "Denver"}}}]}
+         (stored-chat-message->map
+          (-> (ChatCompletionStoreMessage/builder)
+              (.id "msg_1")
+              (.role (com.openai.core.JsonValue/from "assistant"))
+              (.content "Calling a tool")
+              (.refusal "no")
+              (.toolCalls [(chat-tool-call "{\"location\":\"Denver\"}")])
+              (.build))))))

@@ -66,6 +66,7 @@
                                                ChatCompletionCreateParams$Metadata$Builder
                                                ChatCompletionCreateParams$ResponseFormat
                                                ChatCompletionCreateParams$ServiceTier
+                                               ChatCompletionDeleted
                                                ChatCompletionDeveloperMessageParam
                                                ChatCompletionDeveloperMessageParam$Builder
                                                ChatCompletionFunctionTool
@@ -78,6 +79,12 @@
                                                ChatCompletionMessageFunctionToolCall$Function$Builder
                                                ChatCompletionMessageParam
                                                ChatCompletionMessageToolCall
+                                               ChatCompletionListPage
+                                               ChatCompletionListParams
+                                               ChatCompletionListParams$Builder
+                                               ChatCompletionListParams$Metadata
+                                               ChatCompletionListParams$Metadata$Builder
+                                               ChatCompletionListParams$Order
                                                ChatCompletionNamedToolChoice
                                                ChatCompletionNamedToolChoice$Builder
                                                ChatCompletionNamedToolChoice$Function
@@ -91,8 +98,17 @@
                                                ChatCompletionToolChoiceOption$Auto
                                                ChatCompletionToolMessageParam
                                                ChatCompletionToolMessageParam$Builder
+                                               ChatCompletionUpdateParams
+                                               ChatCompletionUpdateParams$Builder
+                                               ChatCompletionUpdateParams$Metadata
+                                               ChatCompletionUpdateParams$Metadata$Builder
                                                ChatCompletionUserMessageParam
-                                               ChatCompletionUserMessageParam$Builder)
+                                               ChatCompletionUserMessageParam$Builder
+                                               ChatCompletionStoreMessage)
+           (com.openai.models.chat.completions.messages MessageListPage
+                                                        MessageListParams
+                                                        MessageListParams$Builder
+                                                        MessageListParams$Order)
            (com.openai.models.completions CompletionUsage)
            (com.openai.models.batches Batch
                                       Batch$Status
@@ -128,6 +144,8 @@
                                          EmbeddingCreateParams$Builder
                                          EmbeddingCreateParams$Input)
            (com.openai.models.models Model
+                                      ModelDeleteParams
+                                      ModelDeleted
                                       ModelListPage)
            (com.openai.models.responses EasyInputMessage
                                          EasyInputMessage$Builder
@@ -253,6 +271,7 @@
                                          ModelService
                                          ResponseService)
            (com.openai.services.blocking.chat ChatCompletionService)
+           (com.openai.services.blocking.chat.completions MessageService)
            (com.openai.services.blocking.responses InputItemService
                                                     InputTokenService)))
 
@@ -894,6 +913,22 @@
     (let [^ModelService svc (.models client)]
       (model->map (.retrieve svc model-id)))))
 
+(defn- ->model-delete-params ^ModelDeleteParams [^String model-id]
+  (-> (ModelDeleteParams/builder)
+      (.model model-id)
+      (.build)))
+
+(defn- deleted-model->map [^ModelDeleted m]
+  {:id (.id m)
+   :deleted (.deleted m)})
+
+(defn delete-model
+  "Delete a fine-tuned model and return `{:id :deleted}`."
+  [^OpenAIClient client ^String model-id]
+  (impl/with-api-errors
+    (let [^ModelService svc (.models client)]
+      (deleted-model->map (.delete svc (->model-delete-params model-id))))))
+
 (defn- event->map
   "Normalize one `ResponseStreamEvent` into a Clojure map keyed by `:type`."
   [^ResponseStreamEvent ev]
@@ -1265,6 +1300,50 @@
       (.isPresent (.usage r)) (assoc :usage (completion-usage->map (.get (.usage r))))
       (.isPresent (.serviceTier r)) (assoc :service-tier (impl/->keyword (.asString ^ChatCompletion$ServiceTier (.get (.serviceTier r))))))))
 
+(defn- ->chat-completion-update-metadata ^ChatCompletionUpdateParams$Metadata [m]
+  (let [^ChatCompletionUpdateParams$Metadata$Builder b (ChatCompletionUpdateParams$Metadata/builder)]
+    (.additionalProperties b ^java.util.Map (impl/->json-value-properties m))
+    (.build b)))
+
+(defn- ->chat-completion-update-params ^ChatCompletionUpdateParams
+  [^String completion-id {:keys [metadata]}]
+  (let [^ChatCompletionUpdateParams$Builder b (ChatCompletionUpdateParams/builder)]
+    (.completionId b completion-id)
+    (when metadata (.metadata b (->chat-completion-update-metadata metadata)))
+    (.build b)))
+
+(defn- ->chat-completion-list-metadata ^ChatCompletionListParams$Metadata [m]
+  (let [^ChatCompletionListParams$Metadata$Builder b (ChatCompletionListParams$Metadata/builder)]
+    (doseq [[k v] m]
+      (.putAdditionalProperty b (name k) (str v)))
+    (.build b)))
+
+(defn- ->chat-completion-list-params ^ChatCompletionListParams
+  [{:keys [model metadata after limit order]}]
+  (let [^ChatCompletionListParams$Builder b (ChatCompletionListParams/builder)]
+    (when model (.model b ^String model))
+    (when metadata (.metadata b (->chat-completion-list-metadata metadata)))
+    (when after (.after b ^String after))
+    (when limit (.limit b (long limit)))
+    (when order (.order b (ChatCompletionListParams$Order/of (name order))))
+    (.build b)))
+
+(defn- ->chat-completion-message-list-params ^MessageListParams
+  [^String completion-id {:keys [after limit order]}]
+  (let [^MessageListParams$Builder b (MessageListParams/builder)]
+    (.completionId b completion-id)
+    (when after (.after b ^String after))
+    (when limit (.limit b (long limit)))
+    (when order (.order b (MessageListParams$Order/of (name order))))
+    (.build b)))
+
+(defn- stored-chat-message->map [^ChatCompletionStoreMessage m]
+  (assoc (chat-message->map (.toChatCompletionMessage m)) :id (.id m)))
+
+(defn- deleted-chat-completion->map [^ChatCompletionDeleted c]
+  {:id (.id c)
+   :deleted (.deleted c)})
+
 (defn- chat-delta-tool-call->map [^ChatCompletionChunk$Choice$Delta$ToolCall c]
   (cond-> {:index (.index c)}
     (.isPresent (.id c)) (assoc :id (.get (.id c)))
@@ -1326,6 +1405,53 @@
     (let [^ChatService chat (.chat client)
           ^ChatCompletionService svc (.completions chat)]
       (chat-completion->map (.create svc (->chat-params req))))))
+
+(defn get-chat-completion
+  "Retrieve one stored chat completion by id."
+  [^OpenAIClient client ^String completion-id]
+  (impl/with-api-errors
+    (let [^ChatService chat (.chat client)
+          ^ChatCompletionService svc (.completions chat)]
+      (chat-completion->map (.retrieve svc completion-id)))))
+
+(defn update-chat-completion
+  "Update metadata on a stored chat completion."
+  [^OpenAIClient client ^String completion-id opts]
+  (impl/with-api-errors
+    (let [^ChatService chat (.chat client)
+          ^ChatCompletionService svc (.completions chat)]
+      (chat-completion->map (.update svc (->chat-completion-update-params completion-id opts))))))
+
+(defn list-chat-completions
+  "List stored chat completions, following all pages automatically."
+  ([^OpenAIClient client]
+   (list-chat-completions client {}))
+  ([^OpenAIClient client opts]
+   (impl/with-api-errors
+     (let [^ChatService chat (.chat client)
+           ^ChatCompletionService svc (.completions chat)
+           ^ChatCompletionListPage p (.list svc (->chat-completion-list-params opts))]
+       (mapv chat-completion->map (impl/all-pages p))))))
+
+(defn delete-chat-completion
+  "Delete a stored chat completion and return `{:id :deleted}`."
+  [^OpenAIClient client ^String completion-id]
+  (impl/with-api-errors
+    (let [^ChatService chat (.chat client)
+          ^ChatCompletionService svc (.completions chat)]
+      (deleted-chat-completion->map (.delete svc completion-id)))))
+
+(defn list-chat-completion-messages
+  "List messages from a stored chat completion, following all pages automatically."
+  ([^OpenAIClient client ^String completion-id]
+   (list-chat-completion-messages client completion-id {}))
+  ([^OpenAIClient client ^String completion-id opts]
+   (impl/with-api-errors
+     (let [^ChatService chat (.chat client)
+           ^ChatCompletionService completions (.completions chat)
+           ^MessageService svc (.messages completions)
+           ^MessageListPage p (.list svc (->chat-completion-message-list-params completion-id opts))]
+       (mapv stored-chat-message->map (impl/all-pages p))))))
 
 (defn stream-chat-completion
   "Stream a Chat Completions API request, invoking `on-event` with a normalized
