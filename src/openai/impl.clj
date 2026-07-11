@@ -92,6 +92,14 @@
 (defn json-value->clj [^JsonValue value]
   (walk/keywordize-keys (.convert value Object)))
 
+(defn sdk-object->clj [value]
+  (walk/postwalk
+   (fn [x]
+     (if (map? x)
+       (into {} (map (fn [[k v]] [(->keyword k) v])) x)
+       x))
+   (json/read-value (json/write-value-as-string value) json-mapper)))
+
 (defn all-pages
   "Realize every element across all pages of an SDK *ListPage via its autoPager."
   [page]
