@@ -4,14 +4,13 @@
 covers project-scoped API keys, service accounts, limits, permissions, users,
 groups, roles, retention, spend alerts, and certificates.
 
-Typed Admin wrappers use positional resource IDs and a trailing kebab-case map
-for optional body or query values. Admin groups not yet migrated to typed
-interop still accept one kebab-case params map containing path, query, and body
-values required by the SDK operation.
+Admin wrappers take positional resource IDs (project, group, user, role, and
+so on) followed by a trailing kebab-case map for optional body or query values,
+matching the rest of the library.
 
 ```clojure
 (admin/project-create client {:name "research"})
 (admin/group-role-create client "group_..." {:role-id "role_..."})
 (admin/group-user-retrieve client "group_..." "user_...")
-(admin-projects/user-list client {:project-id "proj_..." :limit 20})
+(admin-projects/user-list client "proj_..." {:limit 20})
 ```

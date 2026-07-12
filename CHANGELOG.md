@@ -11,6 +11,9 @@
 - Upgraded `com.openai/openai-java` from 4.41.0 to 4.42.0.
 - Added GPT-5.6-sol reasoning mode, prompt-cache options, programmatic tool
   calling, and cache-write token usage.
+- Admin API and all service namespaces use hand-written typed interop with
+  curated, present-only response maps and idiomatic positional resource IDs
+  (no runtime reflection or generic JSON-dump conversion outside webhooks).
 
 ## [0.6.0] - 2026-07-10
 ### Added
