@@ -4,7 +4,8 @@
   (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)
            (com.openai.core.http HttpResponse)
-           (com.openai.models.videos Video VideoCreateParams VideoDeleteResponse
+           (com.openai.models.videos Video VideoCreateCharacterResponse VideoCreateError
+                                      VideoCreateParams VideoDeleteResponse
                                       VideoDownloadContentParams$Variant VideoListPage
                                       VideoListParams VideoListParams$Order VideoModel
                                       VideoSeconds VideoSize)
@@ -24,14 +25,25 @@
     (when size (.size b (VideoSize/of (str size))))
     (when seconds (.seconds b (VideoSeconds/of (str seconds))))
     (when input-reference (set-create-reference! b input-reference)) (.build b)))
+(defn- video-error->map [^VideoCreateError error]
+  {:code (.code error) :message (.message error)})
+
 (defn- video->map [^Video v]
   (cond-> {:id (.id v) :status (impl/->keyword (.asString (.status v)))
            :model (.asString (.model v)) :progress (.progress v) :created-at (.createdAt v)
            :size (.asString (.size v)) :seconds (.asString (.seconds v))}
     (.isPresent (.completedAt v)) (assoc :completed-at (impl/opt-get (.completedAt v)))
     (.isPresent (.expiresAt v)) (assoc :expires-at (impl/opt-get (.expiresAt v)))
-    (.isPresent (.error v)) (assoc :error (impl/sdk-object->clj (impl/opt-get (.error v))))
+    (.isPresent (.error v)) (assoc :error (video-error->map (impl/opt-get (.error v))))
     (.isPresent (.prompt v)) (assoc :prompt (impl/opt-get (.prompt v)))))
+
+(defn- delete-response->map [^VideoDeleteResponse response]
+  {:id (.id response) :deleted (.deleted response)})
+
+(defn- character->map [^VideoCreateCharacterResponse character]
+  (cond-> {:created-at (.createdAt character)}
+    (.isPresent (.id character)) (assoc :id (impl/opt-get (.id character)))
+    (.isPresent (.name character)) (assoc :name (impl/opt-get (.name character)))))
 (defn create [^OpenAIClient client req]
   (impl/with-api-errors (let [^VideoService svc (.videos client)]
                           (video->map (.create svc (->create-params req))))))
@@ -49,7 +61,7 @@
 (defn delete [^OpenAIClient client ^String id]
   (impl/with-api-errors
     (let [^VideoService svc (.videos client) ^VideoDeleteResponse d (.delete svc id)]
-      (impl/sdk-object->clj d))))
+      (delete-response->map d))))
 (defn remix [^OpenAIClient client ^String id {:keys [prompt]}]
   (impl/with-api-errors
     (let [p (-> (com.openai.models.videos.VideoRemixParams/builder)
@@ -93,7 +105,7 @@
   (impl/with-api-errors
     (let [b (com.openai.models.videos.VideoCreateCharacterParams/builder) _ (.name b ^String name)
           _ (set-character-video! b video) ^VideoService svc (.videos client)]
-      (impl/sdk-object->clj (.createCharacter svc (.build b))))))
+      (character->map (.createCharacter svc (.build b))))))
 (defn get-character [^OpenAIClient client ^String id]
   (impl/with-api-errors
-    (let [^VideoService svc (.videos client)] (impl/sdk-object->clj (.getCharacter svc id)))))
+    (let [^VideoService svc (.videos client)] (character->map (.getCharacter svc id)))))

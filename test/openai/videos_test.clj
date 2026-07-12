@@ -2,7 +2,8 @@
   (:require [clojure.test :refer [deftest is]]
             [openai.videos :as videos])
   (:import (com.openai.core JsonValue)
-           (com.openai.models.videos Video Video$Builder Video$Status VideoCreateError
+           (com.openai.models.videos Video Video$Builder Video$Status VideoCreateCharacterResponse
+                                     VideoCreateError VideoDeleteResponse
                                      VideoCreateParams VideoCreateParams$InputReference
                                      VideoModel VideoSeconds VideoSize)))
 
@@ -48,4 +49,24 @@
               :created-at 10 :size "1280x720" :seconds "8"
               :completed-at 20 :expires-at 30 :prompt "A sunrise"}
              (dissoc full :error)))
-      (is (map? (:error full))))))
+      (is (= {:code "render_failed" :message "Could not render"}
+             (:error full))))))
+
+(deftest converts-character-with-present-only-optionals
+  (let [convert (some-> (ns-resolve 'openai.videos 'character->map) deref)
+        minimal (-> (VideoCreateCharacterResponse/builder)
+                    (.id (java.util.Optional/empty)) (.createdAt 10)
+                    (.name (java.util.Optional/empty)) (.build))
+        full (-> (VideoCreateCharacterResponse/builder)
+                 (.id "char_1") (.createdAt 10) (.name "Scout") (.build))]
+    (is (= {:created-at 10} (when convert (convert minimal))))
+    (is (= {:id "char_1" :created-at 10 :name "Scout"}
+           (when convert (convert full))))))
+
+(deftest converts-video-delete-response
+  (let [convert (some-> (ns-resolve 'openai.videos 'delete-response->map) deref)
+        response (-> (VideoDeleteResponse/builder)
+                     (.id "video_1") (.deleted true)
+                     (.object_ (JsonValue/from "video.deleted")) (.build))]
+    (is (= {:id "video_1" :deleted true}
+           (when convert (convert response))))))
