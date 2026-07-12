@@ -1,7 +1,6 @@
 (ns openai.admin.projects
   "Project-scoped OpenAI Admin API wrappers."
-  (:require [openai.admin :as admin]
-            [openai.impl :as impl])
+  (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)
            (com.openai.models.admin.organization.projects.apikeys ApiKeyDeleteParams ApiKeyDeleteResponse ApiKeyListPage ApiKeyListParams ApiKeyRetrieveParams ProjectApiKey ProjectApiKey$Owner ProjectApiKey$Owner$ServiceAccount ProjectApiKey$Owner$User)
            (com.openai.models.admin.organization.projects.certificates CertificateActivatePage CertificateActivateParams CertificateActivateResponse CertificateActivateResponse$CertificateDetails CertificateDeactivatePage CertificateDeactivateParams CertificateDeactivateResponse CertificateDeactivateResponse$CertificateDetails CertificateListPage CertificateListParams CertificateListParams$Order CertificateListResponse CertificateListResponse$CertificateDetails)
@@ -15,15 +14,6 @@
            (com.openai.services.blocking.admin.organization.projects.groups RoleService)))
 
 (set! *warn-on-reflection* true)
-
-(defn- operation-name [prefix action]
-  (symbol (str prefix "-" (-> action name
-                               (clojure.string/replace #"([a-z])([A-Z])" "$1-$2")
-                               clojure.string/lower-case))))
-(defmacro ^:private defproject [prefix path actions]
-  `(do ~@(for [action actions]
-           `(defn ~(operation-name prefix action) [client# params#]
-              (admin/request client# ~(into [:projects] path) ~action params#)))))
 
 (defn- projects-service ^ProjectService [^OpenAIClient client]
   (let [^OrganizationService organization (.organization (.admin client))]
@@ -386,10 +376,161 @@
           ^com.openai.models.admin.organization.projects.users.roles.RoleDeleteResponse r (.delete svc p)]
       {:deleted (.deleted r)})))
 
-(defproject "hosted-tool-permission" [:hostedToolPermissions] [:retrieve :update])
-(defproject "model-permission" [:modelPermissions] [:retrieve :update :delete])
-(defproject "rate-limit" [:rateLimits] [:listRateLimits :updateRateLimit])
-(defproject "role" [:roles] [:create :retrieve :update :list :delete])
-(defproject "service-account" [:serviceAccounts] [:create :retrieve :update :list :delete])
-(defproject "spend-alert" [:spendAlerts] [:create :retrieve :update :list :delete])
-(defproject "user" [:users] [:create :retrieve :update :list :delete])
+;; Hosted tool permissions
+
+(defn- ->hosted-tool-permission-retrieve-params ^com.openai.models.admin.organization.projects.hostedtoolpermissions.HostedToolPermissionRetrieveParams [^String project-id]
+  (-> (com.openai.models.admin.organization.projects.hostedtoolpermissions.HostedToolPermissionRetrieveParams/builder)
+      (.projectId project-id) (.build)))
+
+(defn- ->hosted-tool-permission-update-params ^com.openai.models.admin.organization.projects.hostedtoolpermissions.HostedToolPermissionUpdateParams [^String project-id opts]
+  (let [b (com.openai.models.admin.organization.projects.hostedtoolpermissions.HostedToolPermissionUpdateParams/builder)]
+    (.projectId b project-id)
+    (when-let [v (:code-interpreter opts)] (.codeInterpreter b (-> (com.openai.models.admin.organization.projects.hostedtoolpermissions.HostedToolPermissionUpdateParams$CodeInterpreter/builder) (.enabled (boolean (:enabled v))) (.build))))
+    (when-let [v (:file-search opts)] (.fileSearch b (-> (com.openai.models.admin.organization.projects.hostedtoolpermissions.HostedToolPermissionUpdateParams$FileSearch/builder) (.enabled (boolean (:enabled v))) (.build))))
+    (when-let [v (:image-generation opts)] (.imageGeneration b (-> (com.openai.models.admin.organization.projects.hostedtoolpermissions.HostedToolPermissionUpdateParams$ImageGeneration/builder) (.enabled (boolean (:enabled v))) (.build))))
+    (when-let [v (:mcp opts)] (.mcp b (-> (com.openai.models.admin.organization.projects.hostedtoolpermissions.HostedToolPermissionUpdateParams$Mcp/builder) (.enabled (boolean (:enabled v))) (.build))))
+    (when-let [v (:web-search opts)] (.webSearch b (-> (com.openai.models.admin.organization.projects.hostedtoolpermissions.HostedToolPermissionUpdateParams$WebSearch/builder) (.enabled (boolean (:enabled v))) (.build))))
+    (.build b)))
+
+(defn- hosted-tool-permission->map [^com.openai.models.admin.organization.projects.hostedtoolpermissions.ProjectHostedToolPermissions p]
+  {:code-interpreter {:enabled (.enabled (.codeInterpreter p))}
+   :file-search {:enabled (.enabled (.fileSearch p))}
+   :image-generation {:enabled (.enabled (.imageGeneration p))}
+   :mcp {:enabled (.enabled (.mcp p))}
+   :web-search {:enabled (.enabled (.webSearch p))}})
+
+(defn hosted-tool-permission-retrieve [^OpenAIClient client ^String project-id]
+  (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.HostedToolPermissionService s (.hostedToolPermissions (projects-service client))]
+                          (hosted-tool-permission->map (.retrieve s (->hosted-tool-permission-retrieve-params project-id))))))
+(defn hosted-tool-permission-update [^OpenAIClient client ^String project-id opts]
+  (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.HostedToolPermissionService s (.hostedToolPermissions (projects-service client))]
+                          (hosted-tool-permission->map (.update s (->hosted-tool-permission-update-params project-id opts))))))
+
+;; Model permissions
+
+(defn- model-permission->map [^com.openai.models.admin.organization.projects.modelpermissions.ProjectModelPermissions p]
+  {:mode (impl/->keyword (.mode p)) :model-ids (vec (.modelIds p))})
+(defn- ->model-permission-update-params [^String project-id {:keys [mode model-ids]}]
+  (when-not mode (impl/missing-key! :mode)) (when-not model-ids (impl/missing-key! :model-ids))
+  (-> (com.openai.models.admin.organization.projects.modelpermissions.ModelPermissionUpdateParams/builder)
+      (.projectId project-id) (.mode (com.openai.models.admin.organization.projects.modelpermissions.ModelPermissionUpdateParams$Mode/of (impl/enum-name mode)))
+      (.modelIds ^java.util.List model-ids) (.build)))
+(defn model-permission-retrieve [^OpenAIClient client ^String project-id]
+  (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.ModelPermissionService s (.modelPermissions (projects-service client))]
+                          (model-permission->map (.retrieve s (-> (com.openai.models.admin.organization.projects.modelpermissions.ModelPermissionRetrieveParams/builder) (.projectId project-id) (.build)))))))
+(defn model-permission-update [^OpenAIClient client ^String project-id req]
+  (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.ModelPermissionService s (.modelPermissions (projects-service client))]
+                          (model-permission->map (.update s (->model-permission-update-params project-id req))))))
+(defn model-permission-delete [^OpenAIClient client ^String project-id]
+  (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.ModelPermissionService s (.modelPermissions (projects-service client))
+                              ^com.openai.models.admin.organization.projects.modelpermissions.ProjectModelPermissionsDeleted r
+                              (.delete s (-> (com.openai.models.admin.organization.projects.modelpermissions.ModelPermissionDeleteParams/builder) (.projectId project-id) (.build)))]
+                          {:deleted (.deleted r)})))
+
+;; Rate limits
+
+(defn- ->rate-limit-list-params ^com.openai.models.admin.organization.projects.ratelimits.RateLimitListRateLimitsParams [^String project-id {:keys [after before limit]}]
+  (let [b (com.openai.models.admin.organization.projects.ratelimits.RateLimitListRateLimitsParams/builder)]
+    (.projectId b project-id) (when after (.after b ^String after)) (when before (.before b ^String before))
+    (when limit (.limit b (long limit))) (.build b)))
+(defn- ->rate-limit-update-params [^String project-id ^String rate-limit-id opts]
+  (let [b (com.openai.models.admin.organization.projects.ratelimits.RateLimitUpdateRateLimitParams/builder)]
+    (.projectId b project-id) (.rateLimitId b rate-limit-id)
+    (doseq [[k setter] [[:batch-1-day-max-input-tokens #(.batch1DayMaxInputTokens b (long %))]
+                        [:max-audio-megabytes-per-1-minute #(.maxAudioMegabytesPer1Minute b (long %))]
+                        [:max-images-per-1-minute #(.maxImagesPer1Minute b (long %))]
+                        [:max-requests-per-1-day #(.maxRequestsPer1Day b (long %))]
+                        [:max-requests-per-1-minute #(.maxRequestsPer1Minute b (long %))]
+                        [:max-tokens-per-1-minute #(.maxTokensPer1Minute b (long %))]]]
+      (when-some [v (get opts k)] (setter v)))
+    (.build b)))
+(defn- rate-limit->map [^com.openai.models.admin.organization.projects.ratelimits.ProjectRateLimit r]
+  (cond-> {:id (.id r) :max-requests-per-1-minute (.maxRequestsPer1Minute r)
+           :max-tokens-per-1-minute (.maxTokensPer1Minute r) :model (.model r)}
+    (.isPresent (.batch1DayMaxInputTokens r)) (assoc :batch-1-day-max-input-tokens (impl/opt-get (.batch1DayMaxInputTokens r)))
+    (.isPresent (.maxAudioMegabytesPer1Minute r)) (assoc :max-audio-megabytes-per-1-minute (impl/opt-get (.maxAudioMegabytesPer1Minute r)))
+    (.isPresent (.maxImagesPer1Minute r)) (assoc :max-images-per-1-minute (impl/opt-get (.maxImagesPer1Minute r)))
+    (.isPresent (.maxRequestsPer1Day r)) (assoc :max-requests-per-1-day (impl/opt-get (.maxRequestsPer1Day r)))))
+(defn rate-limit-list-rate-limits
+  ([^OpenAIClient client ^String project-id] (rate-limit-list-rate-limits client project-id {}))
+  ([^OpenAIClient client ^String project-id opts]
+   (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.RateLimitService s (.rateLimits (projects-service client))
+                               ^com.openai.models.admin.organization.projects.ratelimits.RateLimitListRateLimitsPage p (.listRateLimits s (->rate-limit-list-params project-id opts))]
+                           (mapv rate-limit->map (impl/all-pages p))))))
+(defn rate-limit-update-rate-limit [^OpenAIClient client ^String project-id ^String rate-limit-id opts]
+  (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.RateLimitService s (.rateLimits (projects-service client))]
+                          (rate-limit->map (.updateRateLimit s (->rate-limit-update-params project-id rate-limit-id opts))))))
+
+;; Project roles
+
+(defn- ->role-create-params [^String project-id {:keys [permissions role-name description]}]
+  (when-not permissions (impl/missing-key! :permissions)) (when-not role-name (impl/missing-key! :role-name))
+  (let [b (com.openai.models.admin.organization.projects.roles.RoleCreateParams/builder)]
+    (.projectId b project-id) (.permissions b ^java.util.List permissions) (.roleName b ^String role-name)
+    (when description (.description b ^String description)) (.build b)))
+(defn- ->role-update-params [^String project-id ^String role-id {:keys [description permissions role-name]}]
+  (let [b (com.openai.models.admin.organization.projects.roles.RoleUpdateParams/builder)]
+    (.projectId b project-id) (.roleId b role-id) (when description (.description b ^String description))
+    (when permissions (.permissions b ^java.util.List permissions)) (when role-name (.roleName b ^String role-name)) (.build b)))
+(defn- ->role-list-params ^com.openai.models.admin.organization.projects.roles.RoleListParams [^String project-id {:keys [after limit order]}]
+  (let [b (com.openai.models.admin.organization.projects.roles.RoleListParams/builder)]
+    (.projectId b project-id) (when after (.after b ^String after)) (when limit (.limit b (long limit)))
+    (when order (.order b (com.openai.models.admin.organization.projects.roles.RoleListParams$Order/of (impl/enum-name order)))) (.build b)))
+(defn role-create [^OpenAIClient client ^String project-id req] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.RoleService s (.roles (projects-service client))] (role->map (.create s (->role-create-params project-id req))))))
+(defn role-retrieve [^OpenAIClient client ^String project-id ^String role-id] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.RoleService s (.roles (projects-service client))] (role->map (.retrieve s (-> (com.openai.models.admin.organization.projects.roles.RoleRetrieveParams/builder) (.projectId project-id) (.roleId role-id) (.build)))))))
+(defn role-update [^OpenAIClient client ^String project-id ^String role-id opts] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.RoleService s (.roles (projects-service client))] (role->map (.update s (->role-update-params project-id role-id opts))))))
+(defn role-list ([^OpenAIClient client ^String project-id] (role-list client project-id {})) ([^OpenAIClient client ^String project-id opts] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.RoleService s (.roles (projects-service client)) ^com.openai.models.admin.organization.projects.roles.RoleListPage p (.list s (->role-list-params project-id opts))] (mapv role->map (impl/all-pages p))))))
+(defn role-delete [^OpenAIClient client ^String project-id ^String role-id] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.RoleService s (.roles (projects-service client)) ^com.openai.models.admin.organization.projects.roles.RoleDeleteResponse r (.delete s (-> (com.openai.models.admin.organization.projects.roles.RoleDeleteParams/builder) (.projectId project-id) (.roleId role-id) (.build)))] {:id (.id r) :deleted (.deleted r)})))
+
+;; Service accounts
+
+(defn- ->service-account-create-params [^String project-id {:keys [name]}] (when-not name (impl/missing-key! :name)) (-> (com.openai.models.admin.organization.projects.serviceaccounts.ServiceAccountCreateParams/builder) (.projectId project-id) (.name ^String name) (.build)))
+(defn- service-account->map [^com.openai.models.admin.organization.projects.serviceaccounts.ProjectServiceAccount a] {:id (.id a) :created-at (.createdAt a) :name (.name a) :role (impl/->keyword (.role a))})
+(defn- service-account-create->map [^com.openai.models.admin.organization.projects.serviceaccounts.ServiceAccountCreateResponse a]
+  (cond-> {:id (.id a) :created-at (.createdAt a) :name (.name a)} (.isPresent (.apiKey a)) (assoc :api-key (let [^com.openai.models.admin.organization.projects.serviceaccounts.ServiceAccountCreateResponse$ApiKey k (impl/opt-get (.apiKey a))] {:id (.id k) :created-at (.createdAt k) :name (.name k) :value (.value k)}))))
+(defn- ->service-account-list-params ^com.openai.models.admin.organization.projects.serviceaccounts.ServiceAccountListParams [^String project-id {:keys [after limit]}] (let [b (com.openai.models.admin.organization.projects.serviceaccounts.ServiceAccountListParams/builder)] (.projectId b project-id) (when after (.after b ^String after)) (when limit (.limit b (long limit))) (.build b)))
+(defn service-account-create [^OpenAIClient client ^String project-id req] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.ServiceAccountService s (.serviceAccounts (projects-service client))] (service-account-create->map (.create s (->service-account-create-params project-id req))))))
+(defn service-account-retrieve [^OpenAIClient client ^String project-id ^String id] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.ServiceAccountService s (.serviceAccounts (projects-service client))] (service-account->map (.retrieve s (-> (com.openai.models.admin.organization.projects.serviceaccounts.ServiceAccountRetrieveParams/builder) (.projectId project-id) (.serviceAccountId id) (.build)))))))
+(defn service-account-update [^OpenAIClient client ^String project-id ^String id {:keys [name role]}] (impl/with-api-errors (let [b (com.openai.models.admin.organization.projects.serviceaccounts.ServiceAccountUpdateParams/builder) ^com.openai.services.blocking.admin.organization.projects.ServiceAccountService s (.serviceAccounts (projects-service client))] (.projectId b project-id) (.serviceAccountId b id) (when name (.name b ^String name)) (when role (.role b (com.openai.models.admin.organization.projects.serviceaccounts.ServiceAccountUpdateParams$Role/of (impl/enum-name role)))) (service-account->map (.update s (.build b))))))
+(defn service-account-list ([^OpenAIClient client ^String project-id] (service-account-list client project-id {})) ([^OpenAIClient client ^String project-id opts] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.ServiceAccountService s (.serviceAccounts (projects-service client)) ^com.openai.models.admin.organization.projects.serviceaccounts.ServiceAccountListPage p (.list s (->service-account-list-params project-id opts))] (mapv service-account->map (impl/all-pages p))))))
+(defn service-account-delete [^OpenAIClient client ^String project-id ^String id] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.ServiceAccountService s (.serviceAccounts (projects-service client)) ^com.openai.models.admin.organization.projects.serviceaccounts.ServiceAccountDeleteResponse r (.delete s (-> (com.openai.models.admin.organization.projects.serviceaccounts.ServiceAccountDeleteParams/builder) (.projectId project-id) (.serviceAccountId id) (.build)))] {:id (.id r) :deleted (.deleted r)})))
+
+;; Spend alerts
+
+(defn- ->spend-alert-create-params ^com.openai.models.admin.organization.projects.spendalerts.SpendAlertCreateParams [^String project-id {:keys [currency interval notification-channel threshold-amount]}]
+  (when-not currency (impl/missing-key! :currency)) (when-not interval (impl/missing-key! :interval)) (when-not notification-channel (impl/missing-key! :notification-channel)) (when-not (some? threshold-amount) (impl/missing-key! :threshold-amount))
+  (-> (com.openai.models.admin.organization.projects.spendalerts.SpendAlertCreateParams/builder) (.projectId project-id)
+      (.currency (com.openai.models.admin.organization.projects.spendalerts.SpendAlertCreateParams$Currency/of (impl/enum-name currency)))
+      (.interval (com.openai.models.admin.organization.projects.spendalerts.SpendAlertCreateParams$Interval/of (impl/enum-name interval)))
+      (.notificationChannel (-> (cond-> (com.openai.models.admin.organization.projects.spendalerts.SpendAlertCreateParams$NotificationChannel/builder)
+                              true (.recipients ^java.util.List (:recipients notification-channel))
+                              true (.type (com.openai.core.JsonValue/from (impl/enum-name (:type notification-channel))))
+                              (:subject-prefix notification-channel) (.subjectPrefix ^String (:subject-prefix notification-channel))) (.build)))
+      (.thresholdAmount (long threshold-amount)) (.build)))
+(defn- ->spend-alert-update-params ^com.openai.models.admin.organization.projects.spendalerts.SpendAlertUpdateParams [^String project-id ^String alert-id {:keys [currency interval notification-channel threshold-amount]}]
+  (when-not currency (impl/missing-key! :currency)) (when-not interval (impl/missing-key! :interval)) (when-not notification-channel (impl/missing-key! :notification-channel)) (when-not (some? threshold-amount) (impl/missing-key! :threshold-amount))
+  (-> (com.openai.models.admin.organization.projects.spendalerts.SpendAlertUpdateParams/builder) (.projectId project-id) (.alertId alert-id)
+      (.currency (com.openai.models.admin.organization.projects.spendalerts.SpendAlertUpdateParams$Currency/of (impl/enum-name currency)))
+      (.interval (com.openai.models.admin.organization.projects.spendalerts.SpendAlertUpdateParams$Interval/of (impl/enum-name interval)))
+      (.notificationChannel (-> (cond-> (com.openai.models.admin.organization.projects.spendalerts.SpendAlertUpdateParams$NotificationChannel/builder)
+                              true (.recipients ^java.util.List (:recipients notification-channel))
+                              true (.type (com.openai.core.JsonValue/from (impl/enum-name (:type notification-channel))))
+                              (:subject-prefix notification-channel) (.subjectPrefix ^String (:subject-prefix notification-channel))) (.build)))
+      (.thresholdAmount (long threshold-amount)) (.build)))
+(defn- spend-alert->map [^com.openai.models.admin.organization.projects.spendalerts.ProjectSpendAlert a] {:id (.id a) :currency (impl/->keyword (.currency a)) :interval (impl/->keyword (.interval a)) :notification-channel {:recipients (vec (.recipients (.notificationChannel a))) :type (impl/json-value->clj (._type (.notificationChannel a)))} :threshold-amount (.thresholdAmount a)})
+(defn- ->spend-alert-list-params ^com.openai.models.admin.organization.projects.spendalerts.SpendAlertListParams [^String project-id {:keys [after before limit order]}] (let [b (com.openai.models.admin.organization.projects.spendalerts.SpendAlertListParams/builder)] (.projectId b project-id) (when after (.after b ^String after)) (when before (.before b ^String before)) (when limit (.limit b (long limit))) (when order (.order b (com.openai.models.admin.organization.projects.spendalerts.SpendAlertListParams$Order/of (impl/enum-name order)))) (.build b)))
+(defn spend-alert-create [^OpenAIClient client ^String project-id req] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.SpendAlertService s (.spendAlerts (projects-service client))] (spend-alert->map (.create s (->spend-alert-create-params project-id req))))))
+(defn spend-alert-retrieve [^OpenAIClient client ^String project-id ^String id] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.SpendAlertService s (.spendAlerts (projects-service client))] (spend-alert->map (.retrieve s (-> (com.openai.models.admin.organization.projects.spendalerts.SpendAlertRetrieveParams/builder) (.projectId project-id) (.alertId id) (.build)))))))
+(defn spend-alert-update [^OpenAIClient client ^String project-id ^String id req] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.SpendAlertService s (.spendAlerts (projects-service client))] (spend-alert->map (.update s (->spend-alert-update-params project-id id req))))))
+(defn spend-alert-list ([^OpenAIClient client ^String project-id] (spend-alert-list client project-id {})) ([^OpenAIClient client ^String project-id opts] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.SpendAlertService s (.spendAlerts (projects-service client)) ^com.openai.models.admin.organization.projects.spendalerts.SpendAlertListPage p (.list s (->spend-alert-list-params project-id opts))] (mapv spend-alert->map (impl/all-pages p))))))
+(defn spend-alert-delete [^OpenAIClient client ^String project-id ^String id] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.SpendAlertService s (.spendAlerts (projects-service client)) ^com.openai.models.admin.organization.projects.spendalerts.ProjectSpendAlertDeleted r (.delete s (-> (com.openai.models.admin.organization.projects.spendalerts.SpendAlertDeleteParams/builder) (.projectId project-id) (.alertId id) (.build)))] {:id (.id r) :deleted (.deleted r)})))
+
+;; Project users
+
+(defn- user->map [^com.openai.models.admin.organization.projects.users.ProjectUser u] (cond-> {:id (.id u) :added-at (.addedAt u) :role (.role u)} (.isPresent (.email u)) (assoc :email (impl/opt-get (.email u))) (.isPresent (.name u)) (assoc :name (impl/opt-get (.name u)))))
+(defn- ->user-list-params ^com.openai.models.admin.organization.projects.users.UserListParams [^String project-id {:keys [after limit]}] (let [b (com.openai.models.admin.organization.projects.users.UserListParams/builder)] (.projectId b project-id) (when after (.after b ^String after)) (when limit (.limit b (long limit))) (.build b)))
+(defn user-create [^OpenAIClient client ^String project-id {:keys [role email user-id]}] (when-not role (impl/missing-key! :role)) (impl/with-api-errors (let [b (com.openai.models.admin.organization.projects.users.UserCreateParams/builder) ^com.openai.services.blocking.admin.organization.projects.UserService s (.users (projects-service client))] (.projectId b project-id) (.role b ^String role) (when email (.email b ^String email)) (when user-id (.userId b ^String user-id)) (user->map (.create s (.build b))))))
+(defn user-retrieve [^OpenAIClient client ^String project-id ^String id] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.UserService s (.users (projects-service client))] (user->map (.retrieve s (-> (com.openai.models.admin.organization.projects.users.UserRetrieveParams/builder) (.projectId project-id) (.userId id) (.build)))))))
+(defn user-update [^OpenAIClient client ^String project-id ^String id {:keys [role]}] (impl/with-api-errors (let [b (com.openai.models.admin.organization.projects.users.UserUpdateParams/builder) ^com.openai.services.blocking.admin.organization.projects.UserService s (.users (projects-service client))] (.projectId b project-id) (.userId b id) (when role (.role b ^String role)) (user->map (.update s (.build b))))))
+(defn user-list ([^OpenAIClient client ^String project-id] (user-list client project-id {})) ([^OpenAIClient client ^String project-id opts] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.UserService s (.users (projects-service client)) ^com.openai.models.admin.organization.projects.users.UserListPage p (.list s (->user-list-params project-id opts))] (mapv user->map (impl/all-pages p))))))
+(defn user-delete [^OpenAIClient client ^String project-id ^String id] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.UserService s (.users (projects-service client)) ^com.openai.models.admin.organization.projects.users.UserDeleteResponse r (.delete s (-> (com.openai.models.admin.organization.projects.users.UserDeleteParams/builder) (.projectId project-id) (.userId id) (.build)))] {:id (.id r) :deleted (.deleted r)})))

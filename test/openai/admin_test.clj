@@ -10,6 +10,8 @@
            (com.openai.models.admin.organization.projects Project ProjectCreateParams)
            (com.openai.models.admin.organization.projects.apikeys ProjectApiKey ProjectApiKey$Owner)
            (com.openai.models.admin.organization.projects.groups ProjectGroup)
+           (com.openai.models.admin.organization.projects.ratelimits ProjectRateLimit RateLimitUpdateRateLimitParams)
+           (com.openai.models.admin.organization.projects.serviceaccounts ProjectServiceAccount ServiceAccountCreateParams)
            (com.openai.models.admin.organization.projects.users.roles RoleListResponse)
            (com.openai.models.admin.organization.spendalerts OrganizationSpendAlert OrganizationSpendAlert$Currency OrganizationSpendAlert$Interval OrganizationSpendAlert$NotificationChannel)
            (com.openai.models.admin.organization.usage UsageCompletionsParams UsageCompletionsResponse$Data UsageCompletionsResponse$Data$Result$OrganizationUsageCompletionsResult)))
@@ -66,7 +68,9 @@
     (is (fn? @v) (str (:name (meta v)) " should be callable"))))
 
 (deftest exposes-typed-project-admin-helpers
-  (doseq [sym '[->group-create-params project-api-key->map user-role-list->map]]
+  (doseq [sym '[->group-create-params project-api-key->map user-role-list->map
+                ->service-account-create-params service-account->map
+                ->rate-limit-update-params rate-limit->map]]
     (is (fn? (some-> (ns-resolve 'openai.admin.projects sym) deref))
         (str sym " should be defined"))))
 
@@ -108,6 +112,35 @@
                 (.resourceType "project") (.updatedAt empty) (.build))]
       (is (= {:id "role_1" :name "Reader" :permissions ["project.read"]
               :predefined-role true :resource-type "project"}
+             (f r))))))
+
+(deftest builds-project-service-account-create-params
+  (when-let [f (some-> (ns-resolve 'openai.admin.projects '->service-account-create-params) deref)]
+    (let [^ServiceAccountCreateParams p (f "proj_1" {:name "deploy"})]
+      (is (= "proj_1" (impl/opt-get (.projectId p))))
+      (is (= "deploy" (.name p))))))
+
+(deftest converts-project-service-account
+  (when-let [f (some-> (ns-resolve 'openai.admin.projects 'service-account->map) deref)]
+    (let [a (-> (ProjectServiceAccount/builder) (.id "svc_1") (.createdAt 123)
+                (.name "Deploy") (.role (com.openai.models.admin.organization.projects.serviceaccounts.ProjectServiceAccount$Role/of "member"))
+                (.build))]
+      (is (= {:id "svc_1" :created-at 123 :name "Deploy" :role :member} (f a))))))
+
+(deftest builds-project-rate-limit-update-params
+  (when-let [f (some-> (ns-resolve 'openai.admin.projects '->rate-limit-update-params) deref)]
+    (let [^RateLimitUpdateRateLimitParams p
+          (f "proj_1" "rl_1" {:max-requests-per-1-minute 100})]
+      (is (= "proj_1" (.projectId p)))
+      (is (= "rl_1" (impl/opt-get (.rateLimitId p))))
+      (is (= 100 (impl/opt-get (.maxRequestsPer1Minute p)))))))
+
+(deftest converts-project-rate-limit-present-only
+  (when-let [f (some-> (ns-resolve 'openai.admin.projects 'rate-limit->map) deref)]
+    (let [r (-> (ProjectRateLimit/builder) (.id "rl_1") (.maxRequestsPer1Minute 100)
+                (.maxTokensPer1Minute 2000) (.model "gpt-4.1") (.build))]
+      (is (= {:id "rl_1" :max-requests-per-1-minute 100
+              :max-tokens-per-1-minute 2000 :model "gpt-4.1"}
              (f r))))))
 
 (deftest builds-admin-api-key-create-params

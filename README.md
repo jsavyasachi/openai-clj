@@ -211,7 +211,7 @@ kebab-case request maps.
                        :size "1280x720" :seconds "8"})
 (webhooks/unwrap webhook-client raw-body request-headers)
 (admin/project-list admin-client {:limit 20})
-(admin-projects/service-account-list admin-client {:project-id "proj_..."})
+(admin-projects/service-account-list admin-client "proj_...")
 ```
 
 `openai.core` also contains Responses, Chat Completions, embeddings, files,
