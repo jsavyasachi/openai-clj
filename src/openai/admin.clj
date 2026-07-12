@@ -7,10 +7,13 @@
            (com.openai.models.admin.organization.auditlogs AuditLogListPage AuditLogListParams AuditLogListParams$EffectiveAt AuditLogListParams$EventType AuditLogListResponse)
            (com.openai.models.admin.organization.certificates Certificate Certificate$CertificateDetails CertificateActivatePage CertificateActivateParams CertificateActivateResponse CertificateActivateResponse$CertificateDetails CertificateCreateParams CertificateDeactivatePage CertificateDeactivateParams CertificateDeactivateResponse CertificateDeactivateResponse$CertificateDetails CertificateDeleteResponse CertificateListPage CertificateListParams CertificateListParams$Order CertificateListResponse CertificateListResponse$CertificateDetails CertificateRetrieveParams CertificateRetrieveParams$Include CertificateUpdateParams)
            (com.openai.models.admin.organization.dataretention DataRetentionUpdateParams DataRetentionUpdateParams$RetentionType OrganizationDataRetention)
+           (com.openai.models.admin.organization.groups Group GroupCreateParams GroupDeleteResponse GroupListPage GroupListParams GroupListParams$Order GroupUpdateParams GroupUpdateResponse)
            (com.openai.models.admin.organization.invites Invite Invite$Project InviteCreateParams InviteCreateParams$Project InviteCreateParams$Project$Role InviteCreateParams$Role InviteDeleteResponse InviteListPage InviteListParams)
            (com.openai.models.admin.organization.projects ProjectCreateParams)
+           (com.openai.models.admin.organization.roles Role RoleCreateParams RoleDeleteResponse RoleListPage RoleListParams RoleListParams$Order RoleUpdateParams)
+           (com.openai.models.admin.organization.users OrganizationUser UserDeleteResponse UserListPage UserListParams UserUpdateParams)
            (com.openai.services.blocking.admin OrganizationService)
-           (com.openai.services.blocking.admin.organization AdminApiKeyService AuditLogService CertificateService DataRetentionService InviteService)
+           (com.openai.services.blocking.admin.organization AdminApiKeyService AuditLogService CertificateService DataRetentionService GroupService InviteService RoleService UserService)
            (java.lang.reflect Method Modifier)))
 (set! *warn-on-reflection* true)
 
@@ -259,7 +262,34 @@
   (-> (DataRetentionUpdateParams/builder) (.retentionType (DataRetentionUpdateParams$RetentionType/of (impl/enum-name retention-type))) (.build)))
 (defn data-retention-retrieve [^OpenAIClient client] (impl/with-api-errors (let [^DataRetentionService s (.dataRetention (organization client))] (data-retention->map (.retrieve s)))))
 (defn data-retention-update [^OpenAIClient client req] (impl/with-api-errors (let [^DataRetentionService s (.dataRetention (organization client))] (data-retention->map (.update s (->data-retention-update-params req))))))
-(defadmin "group" [:groups] [:create :retrieve :update :list :delete])
+(defn- ->group-create-params ^GroupCreateParams [{:keys [name]}]
+  (when-not name (impl/missing-key! :name))
+  (-> (GroupCreateParams/builder) (.name ^String name) (.build)))
+(defn- ->group-update-params ^GroupUpdateParams [^String id {:keys [name]}]
+  (when-not name (impl/missing-key! :name))
+  (-> (GroupUpdateParams/builder) (.groupId id) (.name ^String name) (.build)))
+(defn- ->group-list-params ^GroupListParams [{:keys [after limit order]}]
+  (let [b (GroupListParams/builder)]
+    (when after (.after b ^String after))
+    (when limit (.limit b (long limit)))
+    (when order (.order b (GroupListParams$Order/of (impl/enum-name order))))
+    (.build b)))
+(defn- group->map [^Group g]
+  {:id (.id g) :created-at (.createdAt g) :group-type (impl/->keyword (.groupType g))
+   :is-scim-managed (.isScimManaged g) :name (.name g)})
+(defn- group-update->map [^GroupUpdateResponse g]
+  {:id (.id g) :created-at (.createdAt g) :is-scim-managed (.isScimManaged g) :name (.name g)})
+(defn group-create [^OpenAIClient client req]
+  (impl/with-api-errors (let [^GroupService s (.groups (organization client))] (group->map (.create s (->group-create-params req))))))
+(defn group-retrieve [^OpenAIClient client ^String id]
+  (impl/with-api-errors (let [^GroupService s (.groups (organization client))] (group->map (.retrieve s id)))))
+(defn group-update [^OpenAIClient client ^String id req]
+  (impl/with-api-errors (let [^GroupService s (.groups (organization client))] (group-update->map (.update s (->group-update-params id req))))))
+(defn group-list
+  ([^OpenAIClient client] (group-list client {}))
+  ([^OpenAIClient client opts] (impl/with-api-errors (let [^GroupService s (.groups (organization client)) ^GroupListPage p (.list s (->group-list-params opts))] (mapv group->map (impl/all-pages p))))))
+(defn group-delete [^OpenAIClient client ^String id]
+  (impl/with-api-errors (let [^GroupService s (.groups (organization client)) ^GroupDeleteResponse r (.delete s id)] {:id (.id r) :deleted (.deleted r)})))
 (defn- ->invite-project ^InviteCreateParams$Project [{:keys [id role]}]
   (when-not id (impl/missing-key! :id)) (when-not role (impl/missing-key! :role))
   (-> (InviteCreateParams$Project/builder) (.id ^String id) (.role (InviteCreateParams$Project$Role/of (impl/enum-name role))) (.build)))
@@ -281,12 +311,142 @@
   ([^OpenAIClient client opts] (impl/with-api-errors (let [^InviteService s (.invites (organization client)) ^InviteListPage p (.list s (->invite-list-params opts))] (mapv invite->map (impl/all-pages p))))))
 (defn invite-delete [^OpenAIClient client ^String id] (impl/with-api-errors (let [^InviteService s (.invites (organization client)) ^InviteDeleteResponse r (.delete s id)] {:id (.id r) :deleted (.deleted r)})))
 (defadmin "project" [:projects] [:create :retrieve :update :list :archive])
-(defadmin "role" [:roles] [:create :retrieve :update :list :delete])
+(defn- ->role-create-params ^RoleCreateParams [{:keys [role-name permissions description]}]
+  (when-not role-name (impl/missing-key! :role-name))
+  (when-not permissions (impl/missing-key! :permissions))
+  (let [b (RoleCreateParams/builder)] (.roleName b ^String role-name) (.permissions b ^java.util.List permissions)
+    (when description (.description b ^String description)) (.build b)))
+(defn- ->role-update-params ^RoleUpdateParams [^String id {:keys [description permissions]}]
+  (let [b (RoleUpdateParams/builder)] (.roleId b id)
+    (when description (.description b ^String description))
+    (when permissions (.permissions b ^java.util.List permissions)) (.build b)))
+(defn- ->role-list-params ^RoleListParams [{:keys [after limit order]}]
+  (let [b (RoleListParams/builder)] (when after (.after b ^String after)) (when limit (.limit b (long limit)))
+    (when order (.order b (RoleListParams$Order/of (impl/enum-name order)))) (.build b)))
+(defn- role->map [^Role r]
+  (cond-> {:id (.id r) :name (.name r) :permissions (vec (.permissions r))
+           :predefined-role (.predefinedRole r) :resource-type (.resourceType r)}
+    (.isPresent (.description r)) (assoc :description (impl/opt-get (.description r)))))
+(defn role-create [^OpenAIClient client req] (impl/with-api-errors (let [^RoleService s (.roles (organization client))] (role->map (.create s (->role-create-params req))))))
+(defn role-retrieve [^OpenAIClient client ^String id] (impl/with-api-errors (let [^RoleService s (.roles (organization client))] (role->map (.retrieve s id)))))
+(defn role-update [^OpenAIClient client ^String id opts] (impl/with-api-errors (let [^RoleService s (.roles (organization client))] (role->map (.update s (->role-update-params id opts))))))
+(defn role-list
+  ([^OpenAIClient client] (role-list client {}))
+  ([^OpenAIClient client opts] (impl/with-api-errors (let [^RoleService s (.roles (organization client)) ^RoleListPage p (.list s (->role-list-params opts))] (mapv role->map (impl/all-pages p))))))
+(defn role-delete [^OpenAIClient client ^String id] (impl/with-api-errors (let [^RoleService s (.roles (organization client)) ^RoleDeleteResponse r (.delete s id)] {:id (.id r) :deleted (.deleted r)})))
 (defadmin "spend-alert" [:spendAlerts] [:create :retrieve :update :list :delete])
-(defadmin "user" [:users] [:retrieve :update :list :delete])
-(defadmin "group-role" [:groups :roles] [:create :retrieve :list :delete])
-(defadmin "group-user" [:groups :users] [:create :retrieve :list :delete])
-(defadmin "user-role" [:users :roles] [:create :retrieve :list :delete])
+(defn- ->user-update-params ^UserUpdateParams [^String id {:keys [developer-persona role role-id technical-level]}]
+  (let [b (UserUpdateParams/builder)] (.userId b id)
+    (when developer-persona (.developerPersona b ^String developer-persona))
+    (when role (.role b ^String role)) (when role-id (.roleId b ^String role-id))
+    (when technical-level (.technicalLevel b ^String technical-level)) (.build b)))
+(defn- ->user-list-params ^UserListParams [{:keys [after limit]}]
+  (let [b (UserListParams/builder)] (when after (.after b ^String after)) (when limit (.limit b (long limit))) (.build b)))
+(defn- organization-user->map [^OrganizationUser u]
+  (cond-> {:id (.id u) :added-at (.addedAt u)}
+    (.isPresent (.apiKeyLastUsedAt u)) (assoc :api-key-last-used-at (impl/opt-get (.apiKeyLastUsedAt u)))
+    (.isPresent (.created u)) (assoc :created (impl/opt-get (.created u)))
+    (.isPresent (.developerPersona u)) (assoc :developer-persona (impl/opt-get (.developerPersona u)))
+    (.isPresent (.email u)) (assoc :email (impl/opt-get (.email u)))
+    (.isPresent (.isDefault u)) (assoc :is-default (impl/opt-get (.isDefault u)))
+    (.isPresent (.isScaleTierAuthorizedPurchaser u)) (assoc :is-scale-tier-authorized-purchaser (impl/opt-get (.isScaleTierAuthorizedPurchaser u)))
+    (.isPresent (.isScimManaged u)) (assoc :is-scim-managed (impl/opt-get (.isScimManaged u)))
+    (.isPresent (.isServiceAccount u)) (assoc :is-service-account (impl/opt-get (.isServiceAccount u)))
+    (.isPresent (.name u)) (assoc :name (impl/opt-get (.name u)))
+    (.isPresent (.role u)) (assoc :role (impl/opt-get (.role u)))
+    (.isPresent (.technicalLevel u)) (assoc :technical-level (impl/opt-get (.technicalLevel u)))))
+(defn user-retrieve [^OpenAIClient client ^String id] (impl/with-api-errors (let [^UserService s (.users (organization client))] (organization-user->map (.retrieve s id)))))
+(defn user-update [^OpenAIClient client ^String id opts] (impl/with-api-errors (let [^UserService s (.users (organization client))] (organization-user->map (.update s (->user-update-params id opts))))))
+(defn user-list
+  ([^OpenAIClient client] (user-list client {}))
+  ([^OpenAIClient client opts] (impl/with-api-errors (let [^UserService s (.users (organization client)) ^UserListPage p (.list s (->user-list-params opts))] (mapv organization-user->map (impl/all-pages p))))))
+(defn user-delete [^OpenAIClient client ^String id] (impl/with-api-errors (let [^UserService s (.users (organization client)) ^UserDeleteResponse r (.delete s id)] {:id (.id r) :deleted (.deleted r)})))
+
+(defn- ->group-role-create-params ^com.openai.models.admin.organization.groups.roles.RoleCreateParams [^String group-id {:keys [role-id]}]
+  (when-not role-id (impl/missing-key! :role-id))
+  (-> (com.openai.models.admin.organization.groups.roles.RoleCreateParams/builder) (.groupId group-id) (.roleId ^String role-id) (.build)))
+(defn- ->group-role-retrieve-params ^com.openai.models.admin.organization.groups.roles.RoleRetrieveParams [^String group-id ^String role-id]
+  (-> (com.openai.models.admin.organization.groups.roles.RoleRetrieveParams/builder) (.groupId group-id) (.roleId role-id) (.build)))
+(defn- ->group-role-list-params ^com.openai.models.admin.organization.groups.roles.RoleListParams [^String group-id {:keys [after limit order]}]
+  (let [b (com.openai.models.admin.organization.groups.roles.RoleListParams/builder)] (.groupId b group-id)
+    (when after (.after b ^String after)) (when limit (.limit b (long limit)))
+    (when order (.order b (com.openai.models.admin.organization.groups.roles.RoleListParams$Order/of (impl/enum-name order)))) (.build b)))
+(defn- group-role-retrieve->map [^com.openai.models.admin.organization.groups.roles.RoleRetrieveResponse r]
+  (cond-> {:id (.id r) :name (.name r) :permissions (vec (.permissions r)) :predefined-role (.predefinedRole r) :resource-type (.resourceType r)}
+    (.isPresent (.createdAt r)) (assoc :created-at (impl/opt-get (.createdAt r)))
+    (.isPresent (.createdBy r)) (assoc :created-by (impl/opt-get (.createdBy r)))
+    (.isPresent (.description r)) (assoc :description (impl/opt-get (.description r)))
+    (.isPresent (.updatedAt r)) (assoc :updated-at (impl/opt-get (.updatedAt r)))))
+(defn- group-role-list->map [^com.openai.models.admin.organization.groups.roles.RoleListResponse r]
+  (cond-> {:id (.id r) :name (.name r) :permissions (vec (.permissions r)) :predefined-role (.predefinedRole r) :resource-type (.resourceType r)}
+    (.isPresent (.createdAt r)) (assoc :created-at (impl/opt-get (.createdAt r)))
+    (.isPresent (.createdBy r)) (assoc :created-by (impl/opt-get (.createdBy r)))
+    (.isPresent (.description r)) (assoc :description (impl/opt-get (.description r)))
+    (.isPresent (.updatedAt r)) (assoc :updated-at (impl/opt-get (.updatedAt r)))))
+(defn- group-role-create->map [^com.openai.models.admin.organization.groups.roles.RoleCreateResponse r]
+  (let [^com.openai.models.admin.organization.groups.roles.RoleCreateResponse$Group g (.group r)]
+    {:group {:id (.id g) :created-at (.createdAt g) :name (.name g) :scim-managed (.scimManaged g)} :role (role->map (.role r))}))
+(defn group-role-create [^OpenAIClient client ^String group-id req] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.groups.RoleService s (.roles (.groups (organization client)))] (group-role-create->map (.create s (->group-role-create-params group-id req))))))
+(defn group-role-retrieve [^OpenAIClient client ^String group-id ^String role-id] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.groups.RoleService s (.roles (.groups (organization client)))] (group-role-retrieve->map (.retrieve s (->group-role-retrieve-params group-id role-id))))))
+(defn group-role-list
+  ([^OpenAIClient client ^String group-id] (group-role-list client group-id {}))
+  ([^OpenAIClient client ^String group-id opts] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.groups.RoleService s (.roles (.groups (organization client))) ^com.openai.models.admin.organization.groups.roles.RoleListPage p (.list s (->group-role-list-params group-id opts))] (mapv group-role-list->map (impl/all-pages p))))))
+(defn group-role-delete [^OpenAIClient client ^String group-id ^String role-id]
+  (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.groups.RoleService s (.roles (.groups (organization client))) p (-> (com.openai.models.admin.organization.groups.roles.RoleDeleteParams/builder) (.groupId group-id) (.roleId role-id) (.build)) ^com.openai.models.admin.organization.groups.roles.RoleDeleteResponse r (.delete s p)] {:deleted (.deleted r)})))
+
+(defn- ->group-user-create-params ^com.openai.models.admin.organization.groups.users.UserCreateParams [^String group-id {:keys [user-id]}]
+  (when-not user-id (impl/missing-key! :user-id))
+  (-> (com.openai.models.admin.organization.groups.users.UserCreateParams/builder) (.groupId group-id) (.userId ^String user-id) (.build)))
+(defn- ->group-user-retrieve-params ^com.openai.models.admin.organization.groups.users.UserRetrieveParams [^String group-id ^String user-id]
+  (-> (com.openai.models.admin.organization.groups.users.UserRetrieveParams/builder) (.groupId group-id) (.userId user-id) (.build)))
+(defn- ->group-user-list-params ^com.openai.models.admin.organization.groups.users.UserListParams [^String group-id {:keys [after limit order]}]
+  (let [b (com.openai.models.admin.organization.groups.users.UserListParams/builder)] (.groupId b group-id)
+    (when after (.after b ^String after)) (when limit (.limit b (long limit)))
+    (when order (.order b (com.openai.models.admin.organization.groups.users.UserListParams$Order/of (impl/enum-name order)))) (.build b)))
+(defn- group-user-retrieve->map [^com.openai.models.admin.organization.groups.users.UserRetrieveResponse u]
+  (cond-> {:id (.id u) :name (.name u) :user-type (impl/->keyword (.userType u))}
+    (.isPresent (.email u)) (assoc :email (impl/opt-get (.email u)))
+    (.isPresent (.isServiceAccount u)) (assoc :is-service-account (impl/opt-get (.isServiceAccount u)))
+    (.isPresent (.picture u)) (assoc :picture (impl/opt-get (.picture u)))))
+(defn- group-user-list->map [^com.openai.models.admin.organization.groups.users.OrganizationGroupUser u]
+  (cond-> {:id (.id u) :name (.name u)} (.isPresent (.email u)) (assoc :email (impl/opt-get (.email u)))))
+(defn group-user-create [^OpenAIClient client ^String group-id req] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.groups.UserService s (.users (.groups (organization client))) ^com.openai.models.admin.organization.groups.users.UserCreateResponse r (.create s (->group-user-create-params group-id req))] {:group-id (.groupId r) :user-id (.userId r)})))
+(defn group-user-retrieve [^OpenAIClient client ^String group-id ^String user-id] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.groups.UserService s (.users (.groups (organization client)))] (group-user-retrieve->map (.retrieve s (->group-user-retrieve-params group-id user-id))))))
+(defn group-user-list
+  ([^OpenAIClient client ^String group-id] (group-user-list client group-id {}))
+  ([^OpenAIClient client ^String group-id opts] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.groups.UserService s (.users (.groups (organization client))) ^com.openai.models.admin.organization.groups.users.UserListPage p (.list s (->group-user-list-params group-id opts))] (mapv group-user-list->map (impl/all-pages p))))))
+(defn group-user-delete [^OpenAIClient client ^String group-id ^String user-id]
+  (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.groups.UserService s (.users (.groups (organization client))) p (-> (com.openai.models.admin.organization.groups.users.UserDeleteParams/builder) (.groupId group-id) (.userId user-id) (.build)) ^com.openai.models.admin.organization.groups.users.UserDeleteResponse r (.delete s p)] {:deleted (.deleted r)})))
+
+(defn- ->user-role-create-params ^com.openai.models.admin.organization.users.roles.RoleCreateParams [^String user-id {:keys [role-id]}]
+  (when-not role-id (impl/missing-key! :role-id))
+  (-> (com.openai.models.admin.organization.users.roles.RoleCreateParams/builder) (.userId user-id) (.roleId ^String role-id) (.build)))
+(defn- ->user-role-retrieve-params ^com.openai.models.admin.organization.users.roles.RoleRetrieveParams [^String user-id ^String role-id]
+  (-> (com.openai.models.admin.organization.users.roles.RoleRetrieveParams/builder) (.userId user-id) (.roleId role-id) (.build)))
+(defn- ->user-role-list-params ^com.openai.models.admin.organization.users.roles.RoleListParams [^String user-id {:keys [after limit order]}]
+  (let [b (com.openai.models.admin.organization.users.roles.RoleListParams/builder)] (.userId b user-id)
+    (when after (.after b ^String after)) (when limit (.limit b (long limit)))
+    (when order (.order b (com.openai.models.admin.organization.users.roles.RoleListParams$Order/of (impl/enum-name order)))) (.build b)))
+(defn- user-role-retrieve->map [^com.openai.models.admin.organization.users.roles.RoleRetrieveResponse r]
+  (cond-> {:id (.id r) :name (.name r) :permissions (vec (.permissions r)) :predefined-role (.predefinedRole r) :resource-type (.resourceType r)}
+    (.isPresent (.createdAt r)) (assoc :created-at (impl/opt-get (.createdAt r)))
+    (.isPresent (.createdBy r)) (assoc :created-by (impl/opt-get (.createdBy r)))
+    (.isPresent (.description r)) (assoc :description (impl/opt-get (.description r)))
+    (.isPresent (.updatedAt r)) (assoc :updated-at (impl/opt-get (.updatedAt r)))))
+(defn- user-role-list->map [^com.openai.models.admin.organization.users.roles.RoleListResponse r]
+  (cond-> {:id (.id r) :name (.name r) :permissions (vec (.permissions r)) :predefined-role (.predefinedRole r) :resource-type (.resourceType r)}
+    (.isPresent (.createdAt r)) (assoc :created-at (impl/opt-get (.createdAt r)))
+    (.isPresent (.createdBy r)) (assoc :created-by (impl/opt-get (.createdBy r)))
+    (.isPresent (.description r)) (assoc :description (impl/opt-get (.description r)))
+    (.isPresent (.updatedAt r)) (assoc :updated-at (impl/opt-get (.updatedAt r)))))
+(defn user-role-create [^OpenAIClient client ^String user-id req]
+  (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.users.RoleService s (.roles (.users (organization client))) ^com.openai.models.admin.organization.users.roles.RoleCreateResponse r (.create s (->user-role-create-params user-id req))] {:role (role->map (.role r)) :user (organization-user->map (.user r))})))
+(defn user-role-retrieve [^OpenAIClient client ^String user-id ^String role-id] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.users.RoleService s (.roles (.users (organization client)))] (user-role-retrieve->map (.retrieve s (->user-role-retrieve-params user-id role-id))))))
+(defn user-role-list
+  ([^OpenAIClient client ^String user-id] (user-role-list client user-id {}))
+  ([^OpenAIClient client ^String user-id opts] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.users.RoleService s (.roles (.users (organization client))) ^com.openai.models.admin.organization.users.roles.RoleListPage p (.list s (->user-role-list-params user-id opts))] (mapv user-role-list->map (impl/all-pages p))))))
+(defn user-role-delete [^OpenAIClient client ^String user-id ^String role-id]
+  (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.users.RoleService s (.roles (.users (organization client))) p (-> (com.openai.models.admin.organization.users.roles.RoleDeleteParams/builder) (.userId user-id) (.roleId role-id) (.build)) ^com.openai.models.admin.organization.users.roles.RoleDeleteResponse r (.delete s p)] {:deleted (.deleted r)})))
 (defadmin "usage" [:usage]
   [:audioSpeeches :audioTranscriptions :codeInterpreterSessions :completions
    :costs :embeddings :fileSearchCalls :images :moderations :vectorStores :webSearchCalls])

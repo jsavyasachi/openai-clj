@@ -4,6 +4,8 @@
             [openai.admin.projects :as projects]
             [openai.impl :as impl])
   (:import (com.openai.models.admin.organization.adminapikeys AdminApiKeyCreateParams)
+           (com.openai.models.admin.organization.groups Group Group$Builder GroupCreateParams)
+           (com.openai.models.admin.organization.groups.users UserCreateParams)
            (com.openai.models.admin.organization.invites Invite Invite$Builder Invite$Role Invite$Status)
            (com.openai.models.admin.organization.projects ProjectCreateParams)))
 (set! *warn-on-reflection* true)
@@ -34,3 +36,22 @@
     (is (= {:id "invite_1" :created-at 123 :email "dev@example.com"
             :projects [] :role :reader :status :pending}
            (#'admin/invite->map invite)))))
+
+(deftest builds-group-create-params
+  (let [^GroupCreateParams p (#'admin/->group-create-params {:name "platform"})]
+    (is (= "platform" (.name p)))))
+
+(deftest converts-group
+  (let [^Group$Builder b (Group/builder)
+        group (-> b (.id "group_1") (.createdAt 123)
+                  (.groupType (com.openai.models.admin.organization.groups.Group$GroupType/of "custom"))
+                  (.isScimManaged false) (.name "Platform") (.build))]
+    (is (= {:id "group_1" :created-at 123 :group-type :custom
+            :is-scim-managed false :name "Platform"}
+           (#'admin/group->map group)))))
+
+(deftest builds-group-user-create-params
+  (let [^UserCreateParams p (#'admin/->group-user-create-params
+                              "group_1" {:user-id "user_1"})]
+    (is (= "group_1" (impl/opt-get (.groupId p))))
+    (is (= "user_1" (.userId p)))))
