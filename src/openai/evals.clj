@@ -9,23 +9,286 @@
                                       EvalCreateParams$DataSourceConfig$Custom$ItemSchema
                                       EvalCreateParams$DataSourceConfig$Logs
                                       EvalCreateParams$DataSourceConfig$StoredCompletions
-                                      EvalDeleteResponse EvalListPage EvalListParams
+                                      EvalCreateResponse EvalCreateResponse$DataSourceConfig
+                                      EvalCreateResponse$Metadata EvalCreateResponse$TestingCriterion
+                                      EvalCustomDataSourceConfig EvalCustomDataSourceConfig$Schema
+                                      EvalDeleteResponse EvalListPage EvalListParams EvalListResponse
+                                      EvalListResponse$DataSourceConfig EvalListResponse$Metadata
+                                      EvalListResponse$TestingCriterion EvalRetrieveResponse
+                                      EvalRetrieveResponse$DataSourceConfig EvalRetrieveResponse$Metadata
+                                      EvalRetrieveResponse$TestingCriterion EvalStoredCompletionsDataSourceConfig
+                                      EvalUpdateResponse EvalUpdateResponse$DataSourceConfig
+                                      EvalUpdateResponse$Metadata EvalUpdateResponse$TestingCriterion
                                       EvalListParams$Order EvalListParams$OrderBy)
            (com.openai.models.evals.runs CreateEvalCompletionsRunDataSource
-                                           CreateEvalJsonlRunDataSource RunCreateParams
-                                           RunListPage RunListParams RunListParams$Order
+                                           CreateEvalCompletionsRunDataSource$Source
+                                           CreateEvalCompletionsRunDataSource$Source$FileId
+                                           CreateEvalJsonlRunDataSource
+                                           CreateEvalJsonlRunDataSource$Source
+                                           CreateEvalJsonlRunDataSource$Source$FileId EvalApiError
+                                           RunCancelResponse RunCancelResponse$DataSource
+                                           RunCancelResponse$Metadata RunCancelResponse$PerModelUsage
+                                           RunCancelResponse$PerTestingCriteriaResult RunCancelResponse$ResultCounts
+                                           RunCreateParams RunCreateResponse RunCreateResponse$DataSource
+                                           RunCreateResponse$Metadata RunCreateResponse$PerModelUsage
+                                           RunCreateResponse$PerTestingCriteriaResult RunCreateResponse$ResultCounts
+                                           RunDeleteResponse RunListPage RunListParams RunListResponse
+                                           RunListResponse$DataSource RunListResponse$Metadata
+                                           RunListResponse$PerModelUsage RunListResponse$PerTestingCriteriaResult
+                                           RunListResponse$ResultCounts RunListParams$Order RunRetrieveResponse
+                                           RunRetrieveResponse$DataSource RunRetrieveResponse$Metadata
+                                           RunRetrieveResponse$PerModelUsage
+                                           RunRetrieveResponse$PerTestingCriteriaResult
+                                           RunRetrieveResponse$ResultCounts
                                            RunListParams$Status)
            (com.openai.models.evals.runs.outputitems OutputItemListPage
                                                        OutputItemListParams
                                                        OutputItemListParams$Order
                                                        OutputItemListParams$Status
-                                                       OutputItemRetrieveParams)
-           (com.openai.models.graders.gradermodels StringCheckGrader
+                                                       OutputItemListResponse
+                                                       OutputItemListResponse$DatasourceItem
+                                                       OutputItemListResponse$Result
+                                                       OutputItemListResponse$Result$Sample
+                                                       OutputItemListResponse$Sample
+                                                       OutputItemListResponse$Sample$Input
+                                                       OutputItemListResponse$Sample$Output
+                                                       OutputItemListResponse$Sample$Usage
+                                                       OutputItemRetrieveParams OutputItemRetrieveResponse
+                                                       OutputItemRetrieveResponse$DatasourceItem
+                                                       OutputItemRetrieveResponse$Result
+                                                       OutputItemRetrieveResponse$Result$Sample
+                                                       OutputItemRetrieveResponse$Sample
+                                                       OutputItemRetrieveResponse$Sample$Input
+                                                       OutputItemRetrieveResponse$Sample$Output
+                                                       OutputItemRetrieveResponse$Sample$Usage)
+           (com.openai.models.graders.gradermodels LabelModelGrader PythonGrader
+                                                    ScoreModelGrader StringCheckGrader
+                                                    TextSimilarityGrader
                                                     StringCheckGrader$Operation)
            (com.openai.services.blocking EvalService)
            (com.openai.services.blocking.evals RunService)
            (com.openai.services.blocking.evals.runs OutputItemService)))
 (set! *warn-on-reflection* true)
+
+(defn- properties->map [^java.util.Map properties]
+  (into {} (map (fn [[k v]] [(impl/->keyword k) (impl/json-value->clj ^JsonValue v)])) properties))
+
+(defn- enum-value->keyword [value]
+  (when value (impl/->keyword (str value))))
+
+(defn- json-object-keyword [^JsonValue value]
+  (some-> (impl/json-value->clj value) impl/->keyword))
+
+(defn- custom-data-source->map [^EvalCustomDataSourceConfig config]
+  {:type :custom :schema (properties->map
+                          (._additionalProperties ^EvalCustomDataSourceConfig$Schema (.schema config)))})
+
+(defn- stored-data-source->map [^EvalStoredCompletionsDataSourceConfig config]
+  {:type :stored-completions
+   :schema (properties->map (._additionalProperties (.schema config)))})
+
+(defn- string-check->map [^StringCheckGrader grader]
+  {:type :string-check :name (.name grader) :input (.input grader)
+   :reference (.reference grader) :operation (enum-value->keyword (.operation grader))})
+
+(defn- label-model->map [^LabelModelGrader grader]
+  {:type :label-model :name (.name grader) :model (.model grader)
+   :labels (vec (.labels grader)) :passing-labels (vec (.passingLabels grader))})
+
+(defn- text-similarity->map [^TextSimilarityGrader grader]
+  {:type :text-similarity :name (.name grader) :input (.input grader)
+   :reference (.reference grader)
+   :evaluation-metric (enum-value->keyword (.evaluationMetric grader))})
+
+(defn- python->map [^PythonGrader grader]
+  (cond-> {:type :python :name (.name grader) :source (.source grader)}
+    (.isPresent (.imageTag grader)) (assoc :image-tag (impl/opt-get (.imageTag grader)))))
+
+(defn- score-model->map [^ScoreModelGrader grader]
+  (cond-> {:type :score-model :name (.name grader) :model (.model grader)}
+    (.isPresent (.range grader)) (assoc :range (vec (impl/opt-get (.range grader))))))
+
+(defmacro ^:private def-eval-response-converter
+  [fname response-class data-source-class criterion-class metadata-class]
+  (let [r (with-meta (gensym "response") {:tag response-class})
+        ds (with-meta (gensym "data_source") {:tag data-source-class})
+        criterion (with-meta (gensym "criterion") {:tag criterion-class})
+        metadata (with-meta (gensym "metadata") {:tag metadata-class})]
+    `(defn- ~fname [~r]
+       (let [~ds (.dataSourceConfig ~r)]
+         (cond-> {:id (.id ~r) :created-at (.createdAt ~r) :name (.name ~r)
+                  :object (json-object-keyword (._object_ ~r))
+                  :data-source-config
+                  (cond (.isCustom ~ds) (custom-data-source->map (.asCustom ~ds))
+                        (.isStoredCompletions ~ds) (stored-data-source->map (.asStoredCompletions ~ds))
+                        (.isLogs ~ds) {:type :logs}
+                        :else {:type :unknown})
+                  :testing-criteria
+                  (mapv (fn [~criterion]
+                          (cond (.isStringCheckGrader ~criterion)
+                                (string-check->map (.asStringCheckGrader ~criterion))
+                                (.isLabelModelGrader ~criterion)
+                                (label-model->map (.asLabelModelGrader ~criterion))
+                                (.isEvalGraderTextSimilarity ~criterion)
+                                (text-similarity->map
+                                 (.toTextSimilarityGrader (.asEvalGraderTextSimilarity ~criterion)))
+                                (.isEvalGraderPython ~criterion)
+                                (python->map (.toPythonGrader (.asEvalGraderPython ~criterion)))
+                                (.isEvalGraderScoreModel ~criterion)
+                                (score-model->map
+                                 (.toScoreModelGrader (.asEvalGraderScoreModel ~criterion)))
+                                :else {:type :unknown}))
+                        (.testingCriteria ~r))}
+           (.isPresent (.metadata ~r))
+           (assoc :metadata
+                  (let [~metadata (impl/opt-get (.metadata ~r))]
+                    (properties->map (._additionalProperties ~metadata)))))))))
+
+(def-eval-response-converter eval-create-response->map EvalCreateResponse
+  EvalCreateResponse$DataSourceConfig EvalCreateResponse$TestingCriterion EvalCreateResponse$Metadata)
+(def-eval-response-converter eval-retrieve-response->map EvalRetrieveResponse
+  EvalRetrieveResponse$DataSourceConfig EvalRetrieveResponse$TestingCriterion EvalRetrieveResponse$Metadata)
+(def-eval-response-converter eval-update-response->map EvalUpdateResponse
+  EvalUpdateResponse$DataSourceConfig EvalUpdateResponse$TestingCriterion EvalUpdateResponse$Metadata)
+(def-eval-response-converter eval-list-response->map EvalListResponse
+  EvalListResponse$DataSourceConfig EvalListResponse$TestingCriterion EvalListResponse$Metadata)
+
+(defn- eval-delete-response->map [^EvalDeleteResponse response]
+  {:deleted (.deleted response) :eval-id (.evalId response)
+   :object (impl/->keyword (.object_ response))})
+
+(defn- jsonl-source->map [^CreateEvalJsonlRunDataSource$Source source]
+  (cond (.isFileId source)
+        (let [^CreateEvalJsonlRunDataSource$Source$FileId file (.asFileId source)]
+          {:type :file-id :id (.id file)})
+        (.isFileContent source) {:type :file-content}
+        :else {:type :unknown}))
+
+(defn- completions-source->map [^CreateEvalCompletionsRunDataSource$Source source]
+  (cond (.isFileId source)
+        (let [^CreateEvalCompletionsRunDataSource$Source$FileId file (.asFileId source)]
+          {:type :file-id :id (.id file)})
+        (.isFileContent source) {:type :file-content}
+        (.isStoredCompletions source) {:type :stored-completions}
+        :else {:type :unknown}))
+
+(defn- jsonl-data-source->map [^CreateEvalJsonlRunDataSource source]
+  {:type :jsonl :source (jsonl-source->map (.source source))})
+
+(defn- completions-data-source->map [^CreateEvalCompletionsRunDataSource source]
+  (cond-> {:type :completions :source (completions-source->map (.source source))}
+    (.isPresent (.model source)) (assoc :model (impl/opt-get (.model source)))))
+
+(defn- api-error->map [^EvalApiError error]
+  {:code (.code error) :message (.message error)})
+
+(defmacro ^:private def-run-response-converter
+  [fname response-class data-source-class metadata-class usage-class criterion-class counts-class]
+  (let [r (with-meta (gensym "response") {:tag response-class})
+        ds (with-meta (gensym "data_source") {:tag data-source-class})
+        md (with-meta (gensym "metadata") {:tag metadata-class})
+        u (with-meta (gensym "usage") {:tag usage-class})
+        c (with-meta (gensym "criterion") {:tag criterion-class})
+        counts (with-meta (gensym "counts") {:tag counts-class})]
+    `(defn- ~fname [~r]
+       (let [~ds (.dataSource ~r)
+             ~counts (.resultCounts ~r)]
+         (cond-> {:id (.id ~r) :created-at (.createdAt ~r) :eval-id (.evalId ~r)
+                  :model (.model ~r) :name (.name ~r)
+                  :object (json-object-keyword (._object_ ~r))
+                  :status (impl/->keyword (.status ~r)) :report-url (.reportUrl ~r)
+                  :error (api-error->map (.error ~r))
+                  :data-source (cond (.isJsonl ~ds) (jsonl-data-source->map (.asJsonl ~ds))
+                                     (.isCompletions ~ds) (completions-data-source->map (.asCompletions ~ds))
+                                     (.isResponses ~ds) {:type :responses}
+                                     :else {:type :unknown})
+                  :per-model-usage
+                  (mapv (fn [~u] {:cached-tokens (.cachedTokens ~u)
+                                  :completion-tokens (.completionTokens ~u)
+                                  :invocation-count (.invocationCount ~u)
+                                  :model-name (.modelName ~u) :prompt-tokens (.promptTokens ~u)
+                                  :total-tokens (.totalTokens ~u)}) (.perModelUsage ~r))
+                  :per-testing-criteria-results
+                  (mapv (fn [~c] {:failed (.failed ~c) :passed (.passed ~c)
+                                  :testing-criteria (.testingCriteria ~c)})
+                        (.perTestingCriteriaResults ~r))
+                  :result-counts {:errored (.errored ~counts) :failed (.failed ~counts)
+                                  :passed (.passed ~counts) :total (.total ~counts)}}
+           (.isPresent (.metadata ~r))
+           (assoc :metadata (let [~md (impl/opt-get (.metadata ~r))]
+                              (properties->map (._additionalProperties ~md)))))))))
+
+(def-run-response-converter run-create-response->map RunCreateResponse
+  RunCreateResponse$DataSource RunCreateResponse$Metadata RunCreateResponse$PerModelUsage
+  RunCreateResponse$PerTestingCriteriaResult RunCreateResponse$ResultCounts)
+(def-run-response-converter run-retrieve-response->map RunRetrieveResponse
+  RunRetrieveResponse$DataSource RunRetrieveResponse$Metadata RunRetrieveResponse$PerModelUsage
+  RunRetrieveResponse$PerTestingCriteriaResult RunRetrieveResponse$ResultCounts)
+(def-run-response-converter run-list-response->map RunListResponse
+  RunListResponse$DataSource RunListResponse$Metadata RunListResponse$PerModelUsage
+  RunListResponse$PerTestingCriteriaResult RunListResponse$ResultCounts)
+(def-run-response-converter run-cancel-response->map RunCancelResponse
+  RunCancelResponse$DataSource RunCancelResponse$Metadata RunCancelResponse$PerModelUsage
+  RunCancelResponse$PerTestingCriteriaResult RunCancelResponse$ResultCounts)
+
+(defn- run-delete-response->map [^RunDeleteResponse response]
+  (cond-> {} (.isPresent (.deleted response)) (assoc :deleted (impl/opt-get (.deleted response)))
+    (.isPresent (.object_ response)) (assoc :object (impl/->keyword (impl/opt-get (.object_ response))))
+    (.isPresent (.runId response)) (assoc :run-id (impl/opt-get (.runId response)))))
+
+(defmacro ^:private def-output-item-converter
+  [fname response-class datasource-class result-class result-sample-class sample-class
+   input-class output-class usage-class]
+  (let [r (with-meta (gensym "response") {:tag response-class})
+        datasource (with-meta (gensym "datasource") {:tag datasource-class})
+        result (with-meta (gensym "result") {:tag result-class})
+        result-sample (with-meta (gensym "result_sample") {:tag result-sample-class})
+        sample (with-meta (gensym "sample") {:tag sample-class})
+        input (with-meta (gensym "input") {:tag input-class})
+        output (with-meta (gensym "output") {:tag output-class})
+        usage (with-meta (gensym "usage") {:tag usage-class})]
+    `(defn- ~fname [~r]
+       (let [~datasource (.datasourceItem ~r)
+             ~sample (.sample ~r)
+             ~usage (.usage ~sample)]
+         {:id (.id ~r) :created-at (.createdAt ~r)
+          :datasource-item (properties->map (._additionalProperties ~datasource))
+          :datasource-item-id (.datasourceItemId ~r) :eval-id (.evalId ~r)
+          :object (json-object-keyword (._object_ ~r)) :run-id (.runId ~r)
+          :status (impl/->keyword (.status ~r))
+          :results
+          (mapv (fn [~result]
+                  (cond-> {:name (.name ~result) :passed (.passed ~result) :score (.score ~result)}
+                    (.isPresent (.type ~result))
+                    (assoc :type (impl/->keyword (impl/opt-get (.type ~result))))
+                    (.isPresent (.sample ~result))
+                    (assoc :sample
+                           (let [~result-sample (impl/opt-get (.sample ~result))]
+                             (properties->map (._additionalProperties ~result-sample))))))
+                (.results ~r))
+          :sample {:error (api-error->map (.error ~sample))
+                   :finish-reason (.finishReason ~sample)
+                   :input (mapv (fn [~input] (properties->map (._additionalProperties ~input)))
+                                (.input ~sample))
+                   :max-completion-tokens (.maxCompletionTokens ~sample) :model (.model ~sample)
+                   :output (mapv (fn [~output] (properties->map (._additionalProperties ~output)))
+                                 (.output ~sample))
+                   :seed (.seed ~sample) :temperature (.temperature ~sample) :top-p (.topP ~sample)
+                   :usage {:cached-tokens (.cachedTokens ~usage)
+                           :completion-tokens (.completionTokens ~usage)
+                           :prompt-tokens (.promptTokens ~usage)
+                           :total-tokens (.totalTokens ~usage)}}}))))
+
+(def-output-item-converter output-item-list-response->map OutputItemListResponse
+  OutputItemListResponse$DatasourceItem OutputItemListResponse$Result
+  OutputItemListResponse$Result$Sample OutputItemListResponse$Sample
+  OutputItemListResponse$Sample$Input OutputItemListResponse$Sample$Output
+  OutputItemListResponse$Sample$Usage)
+(def-output-item-converter output-item-retrieve-response->map OutputItemRetrieveResponse
+  OutputItemRetrieveResponse$DatasourceItem OutputItemRetrieveResponse$Result
+  OutputItemRetrieveResponse$Result$Sample OutputItemRetrieveResponse$Sample
+  OutputItemRetrieveResponse$Sample$Input OutputItemRetrieveResponse$Sample$Output
+  OutputItemRetrieveResponse$Sample$Usage)
 
 (defn- ->data-source-config ^EvalCreateParams$DataSourceConfig
   [{:keys [type item-schema include-sample-schema] :as config}]
@@ -74,17 +337,17 @@
 
 (defn create [^OpenAIClient client req]
   (impl/with-api-errors (let [^EvalService svc (.evals client)]
-                          (impl/sdk-object->clj (.create svc (->create-params req))))))
+                          (eval-create-response->map (.create svc (->create-params req))))))
 (defn retrieve [^OpenAIClient client ^String eval-id]
   (impl/with-api-errors (let [^EvalService svc (.evals client)]
-                          (impl/sdk-object->clj (.retrieve svc eval-id)))))
+                          (eval-retrieve-response->map (.retrieve svc eval-id)))))
 (defn update [^OpenAIClient client ^String eval-id {:keys [name metadata]}]
   (impl/with-api-errors
     (let [b (com.openai.models.evals.EvalUpdateParams/builder)
           _ (.evalId b eval-id) _ (when name (.name b ^String name))
           _ (when metadata (.putAdditionalBodyProperty b "metadata" (JsonValue/from metadata)))
           ^EvalService svc (.evals client)]
-      (impl/sdk-object->clj (.update svc (.build b))))))
+      (eval-update-response->map (.update svc (.build b))))))
 
 (defn list
   ([^OpenAIClient client] (list client {}))
@@ -95,11 +358,11 @@
            _ (when order (.order b (EvalListParams$Order/of (name order))))
            _ (when order-by (.orderBy b (EvalListParams$OrderBy/of (impl/enum-name order-by))))
            ^EvalService svc (.evals client) ^EvalListPage page (.list svc (.build b))]
-       (mapv impl/sdk-object->clj (impl/all-pages page))))))
+       (mapv eval-list-response->map (impl/all-pages page))))))
 (defn delete [^OpenAIClient client ^String eval-id]
   (impl/with-api-errors
     (let [^EvalService svc (.evals client) ^EvalDeleteResponse d (.delete svc eval-id)]
-      (impl/sdk-object->clj d))))
+      (eval-delete-response->map d))))
 
 (defn- ->run-data-source [{:keys [type source model] :as ds}]
   (case (keyword type)
@@ -122,14 +385,14 @@
     (.build b)))
 (defn create-run [^OpenAIClient client ^String eval-id req]
   (impl/with-api-errors (let [^RunService svc (.runs (.evals client))]
-                          (impl/sdk-object->clj (.create svc (->run-create-params eval-id req))))))
+                          (run-create-response->map (.create svc (->run-create-params eval-id req))))))
 
 (defn retrieve-run [^OpenAIClient client ^String eval-id ^String run-id]
   (impl/with-api-errors
     (let [p (-> (com.openai.models.evals.runs.RunRetrieveParams/builder)
                 (.evalId eval-id) (.runId run-id) (.build))
           ^RunService svc (.runs (.evals client))]
-      (impl/sdk-object->clj (.retrieve svc p)))))
+      (run-retrieve-response->map (.retrieve svc p)))))
 
 (defn list-runs
   ([^OpenAIClient client ^String eval-id] (list-runs client eval-id {}))
@@ -140,19 +403,19 @@
            _ (when order (.order b (RunListParams$Order/of (name order))))
            _ (when status (.status b (RunListParams$Status/of (impl/enum-name status))))
            ^RunService svc (.runs (.evals client)) ^RunListPage page (.list svc (.build b))]
-       (mapv impl/sdk-object->clj (impl/all-pages page))))))
+       (mapv run-list-response->map (impl/all-pages page))))))
 (defn cancel-run [^OpenAIClient client ^String eval-id ^String run-id]
   (impl/with-api-errors
     (let [p (-> (com.openai.models.evals.runs.RunCancelParams/builder)
                 (.evalId eval-id) (.runId run-id) (.build))
           ^RunService svc (.runs (.evals client))]
-      (impl/sdk-object->clj (.cancel svc p)))))
+      (run-cancel-response->map (.cancel svc p)))))
 (defn delete-run [^OpenAIClient client ^String eval-id ^String run-id]
   (impl/with-api-errors
     (let [p (-> (com.openai.models.evals.runs.RunDeleteParams/builder)
                 (.evalId eval-id) (.runId run-id) (.build))
           ^RunService svc (.runs (.evals client))]
-      (impl/sdk-object->clj (.delete svc p)))))
+      (run-delete-response->map (.delete svc p)))))
 
 (defn- ->output-list-params ^OutputItemListParams
   [^String eval-id ^String run-id {:keys [after limit order status]}]
@@ -169,13 +432,13 @@
    (impl/with-api-errors
      (let [^OutputItemService svc (.outputItems (.runs (.evals client)))
            ^OutputItemListPage page (.list svc (->output-list-params eval-id run-id opts))]
-       (mapv impl/sdk-object->clj (impl/all-pages page))))))
+       (mapv output-item-list-response->map (impl/all-pages page))))))
 (defn retrieve-output-item [^OpenAIClient client ^String eval-id ^String run-id ^String item-id]
   (impl/with-api-errors
     (let [p (-> (OutputItemRetrieveParams/builder) (.evalId eval-id) (.runId run-id)
                 (.outputItemId item-id) (.build))
           ^OutputItemService svc (.outputItems (.runs (.evals client)))]
-      (impl/sdk-object->clj (.retrieve svc p)))))
+      (output-item-retrieve-response->map (.retrieve svc p)))))
 
 (def run-create create-run)
 (def run-retrieve retrieve-run)
