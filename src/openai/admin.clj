@@ -9,11 +9,12 @@
            (com.openai.models.admin.organization.dataretention DataRetentionUpdateParams DataRetentionUpdateParams$RetentionType OrganizationDataRetention)
            (com.openai.models.admin.organization.groups Group GroupCreateParams GroupDeleteResponse GroupListPage GroupListParams GroupListParams$Order GroupUpdateParams GroupUpdateResponse)
            (com.openai.models.admin.organization.invites Invite Invite$Project InviteCreateParams InviteCreateParams$Project InviteCreateParams$Project$Role InviteCreateParams$Role InviteDeleteResponse InviteListPage InviteListParams)
-           (com.openai.models.admin.organization.projects ProjectCreateParams)
+           (com.openai.models.admin.organization.projects Project ProjectCreateParams ProjectListPage ProjectListParams ProjectUpdateParams)
+           (com.openai.models.admin.organization.spendalerts OrganizationSpendAlert OrganizationSpendAlertDeleted OrganizationSpendAlert$NotificationChannel SpendAlertCreateParams SpendAlertCreateParams$Currency SpendAlertCreateParams$Interval SpendAlertCreateParams$NotificationChannel SpendAlertListPage SpendAlertListParams SpendAlertListParams$Order SpendAlertUpdateParams SpendAlertUpdateParams$Currency SpendAlertUpdateParams$Interval SpendAlertUpdateParams$NotificationChannel)
            (com.openai.models.admin.organization.roles Role RoleCreateParams RoleDeleteResponse RoleListPage RoleListParams RoleListParams$Order RoleUpdateParams)
            (com.openai.models.admin.organization.users OrganizationUser UserDeleteResponse UserListPage UserListParams UserUpdateParams)
            (com.openai.services.blocking.admin OrganizationService)
-           (com.openai.services.blocking.admin.organization AdminApiKeyService AuditLogService CertificateService DataRetentionService GroupService InviteService RoleService UserService)
+           (com.openai.services.blocking.admin.organization AdminApiKeyService AuditLogService CertificateService DataRetentionService GroupService InviteService ProjectService RoleService SpendAlertService UsageService UserService)
            (java.lang.reflect Method Modifier)))
 (set! *warn-on-reflection* true)
 
@@ -310,7 +311,32 @@
   ([^OpenAIClient client] (invite-list client {}))
   ([^OpenAIClient client opts] (impl/with-api-errors (let [^InviteService s (.invites (organization client)) ^InviteListPage p (.list s (->invite-list-params opts))] (mapv invite->map (impl/all-pages p))))))
 (defn invite-delete [^OpenAIClient client ^String id] (impl/with-api-errors (let [^InviteService s (.invites (organization client)) ^InviteDeleteResponse r (.delete s id)] {:id (.id r) :deleted (.deleted r)})))
-(defadmin "project" [:projects] [:create :retrieve :update :list :archive])
+(defn- ->project-update-params ^ProjectUpdateParams [^String project-id {:keys [name]}]
+  (when-not name (impl/missing-key! :name))
+  (-> (ProjectUpdateParams/builder) (.projectId project-id) (.name ^String name) (.build)))
+(defn- ->project-list-params ^ProjectListParams [{:keys [after include-archived limit]}]
+  (let [b (ProjectListParams/builder)]
+    (when after (.after b ^String after))
+    (when (some? include-archived) (.includeArchived b (boolean include-archived)))
+    (when limit (.limit b (long limit)))
+    (.build b)))
+(defn- project->map [^Project p]
+  (cond-> {:id (.id p) :created-at (.createdAt p)}
+    (.isPresent (.archivedAt p)) (assoc :archived-at (impl/opt-get (.archivedAt p)))
+    (.isPresent (.name p)) (assoc :name (impl/opt-get (.name p)))
+    (.isPresent (.status p)) (assoc :status (impl/opt-get (.status p)))))
+(defn project-create [^OpenAIClient client req]
+  (impl/with-api-errors (let [^ProjectService s (.projects (organization client))] (project->map (.create s (->project-create-params req))))))
+(defn project-retrieve [^OpenAIClient client ^String project-id]
+  (impl/with-api-errors (let [^ProjectService s (.projects (organization client))] (project->map (.retrieve s project-id)))))
+(defn project-update [^OpenAIClient client ^String project-id opts]
+  (impl/with-api-errors (let [^ProjectService s (.projects (organization client))] (project->map (.update s (->project-update-params project-id opts))))))
+(defn project-list
+  ([^OpenAIClient client] (project-list client {}))
+  ([^OpenAIClient client opts]
+   (impl/with-api-errors (let [^ProjectService s (.projects (organization client)) ^ProjectListPage p (.list s (->project-list-params opts))] (mapv project->map (impl/all-pages p))))))
+(defn project-archive [^OpenAIClient client ^String project-id]
+  (impl/with-api-errors (let [^ProjectService s (.projects (organization client))] (project->map (.archive s project-id)))))
 (defn- ->role-create-params ^RoleCreateParams [{:keys [role-name permissions description]}]
   (when-not role-name (impl/missing-key! :role-name))
   (when-not permissions (impl/missing-key! :permissions))
@@ -334,7 +360,50 @@
   ([^OpenAIClient client] (role-list client {}))
   ([^OpenAIClient client opts] (impl/with-api-errors (let [^RoleService s (.roles (organization client)) ^RoleListPage p (.list s (->role-list-params opts))] (mapv role->map (impl/all-pages p))))))
 (defn role-delete [^OpenAIClient client ^String id] (impl/with-api-errors (let [^RoleService s (.roles (organization client)) ^RoleDeleteResponse r (.delete s id)] {:id (.id r) :deleted (.deleted r)})))
-(defadmin "spend-alert" [:spendAlerts] [:create :retrieve :update :list :delete])
+(defn- ->spend-alert-create-channel ^SpendAlertCreateParams$NotificationChannel [{:keys [recipients subject-prefix type]}]
+  (when-not recipients (impl/missing-key! :recipients)) (when-not type (impl/missing-key! :type))
+  (let [b (SpendAlertCreateParams$NotificationChannel/builder)]
+    (.recipients b ^java.util.List recipients) (.type b (JsonValue/from (impl/enum-name type)))
+    (when subject-prefix (.subjectPrefix b ^String subject-prefix)) (.build b)))
+(defn- ->spend-alert-create-params ^SpendAlertCreateParams [{:keys [currency interval notification-channel threshold-amount]}]
+  (when-not currency (impl/missing-key! :currency)) (when-not interval (impl/missing-key! :interval))
+  (when-not notification-channel (impl/missing-key! :notification-channel))
+  (when-not threshold-amount (impl/missing-key! :threshold-amount))
+  (-> (SpendAlertCreateParams/builder)
+      (.currency (SpendAlertCreateParams$Currency/of (impl/enum-name currency)))
+      (.interval (SpendAlertCreateParams$Interval/of (impl/enum-name interval)))
+      (.notificationChannel (->spend-alert-create-channel notification-channel))
+      (.thresholdAmount (long threshold-amount)) (.build)))
+(defn- ->spend-alert-update-channel ^SpendAlertUpdateParams$NotificationChannel [{:keys [recipients subject-prefix type]}]
+  (when-not recipients (impl/missing-key! :recipients)) (when-not type (impl/missing-key! :type))
+  (let [b (SpendAlertUpdateParams$NotificationChannel/builder)]
+    (.recipients b ^java.util.List recipients) (.type b (JsonValue/from (impl/enum-name type)))
+    (when subject-prefix (.subjectPrefix b ^String subject-prefix)) (.build b)))
+(defn- ->spend-alert-update-params ^SpendAlertUpdateParams [^String alert-id {:keys [currency interval notification-channel threshold-amount]}]
+  (let [b (SpendAlertUpdateParams/builder)] (.alertId b alert-id)
+    (when currency (.currency b (SpendAlertUpdateParams$Currency/of (impl/enum-name currency))))
+    (when interval (.interval b (SpendAlertUpdateParams$Interval/of (impl/enum-name interval))))
+    (when notification-channel (.notificationChannel b (->spend-alert-update-channel notification-channel)))
+    (when threshold-amount (.thresholdAmount b (long threshold-amount))) (.build b)))
+(defn- ->spend-alert-list-params ^SpendAlertListParams [{:keys [after before limit order]}]
+  (let [b (SpendAlertListParams/builder)]
+    (when after (.after b ^String after)) (when before (.before b ^String before))
+    (when limit (.limit b (long limit)))
+    (when order (.order b (SpendAlertListParams$Order/of (impl/enum-name order)))) (.build b)))
+(defn- spend-alert-channel->map [^OrganizationSpendAlert$NotificationChannel c]
+  (cond-> {:recipients (vec (.recipients c)) :type (impl/json-value->clj (._type c))}
+    (.isPresent (.subjectPrefix c)) (assoc :subject-prefix (impl/opt-get (.subjectPrefix c)))))
+(defn- spend-alert->map [^OrganizationSpendAlert a]
+  {:id (.id a) :currency (impl/->keyword (.currency a)) :interval (impl/->keyword (.interval a))
+   :notification-channel (spend-alert-channel->map (.notificationChannel a)) :threshold-amount (.thresholdAmount a)})
+(defn spend-alert-create [^OpenAIClient client req] (impl/with-api-errors (let [^SpendAlertService s (.spendAlerts (organization client))] (spend-alert->map (.create s (->spend-alert-create-params req))))))
+(defn spend-alert-retrieve [^OpenAIClient client ^String alert-id] (impl/with-api-errors (let [^SpendAlertService s (.spendAlerts (organization client))] (spend-alert->map (.retrieve s alert-id)))))
+(defn spend-alert-update [^OpenAIClient client ^String alert-id opts] (impl/with-api-errors (let [^SpendAlertService s (.spendAlerts (organization client))] (spend-alert->map (.update s (->spend-alert-update-params alert-id opts))))))
+(defn spend-alert-list
+  ([^OpenAIClient client] (spend-alert-list client {}))
+  ([^OpenAIClient client opts] (impl/with-api-errors (let [^SpendAlertService s (.spendAlerts (organization client)) ^SpendAlertListPage p (.list s (->spend-alert-list-params opts))] (mapv spend-alert->map (impl/all-pages p))))))
+(defn spend-alert-delete [^OpenAIClient client ^String alert-id]
+  (impl/with-api-errors (let [^SpendAlertService s (.spendAlerts (organization client)) ^OrganizationSpendAlertDeleted r (.delete s alert-id)] {:id (.id r) :deleted (.deleted r)})))
 (defn- ->user-update-params ^UserUpdateParams [^String id {:keys [developer-persona role role-id technical-level]}]
   (let [b (UserUpdateParams/builder)] (.userId b id)
     (when developer-persona (.developerPersona b ^String developer-persona))
@@ -447,6 +516,344 @@
   ([^OpenAIClient client ^String user-id opts] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.users.RoleService s (.roles (.users (organization client))) ^com.openai.models.admin.organization.users.roles.RoleListPage p (.list s (->user-role-list-params user-id opts))] (mapv user-role-list->map (impl/all-pages p))))))
 (defn user-role-delete [^OpenAIClient client ^String user-id ^String role-id]
   (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.users.RoleService s (.roles (.users (organization client))) p (-> (com.openai.models.admin.organization.users.roles.RoleDeleteParams/builder) (.userId user-id) (.roleId role-id) (.build)) ^com.openai.models.admin.organization.users.roles.RoleDeleteResponse r (.delete s p)] {:deleted (.deleted r)})))
-(defadmin "usage" [:usage]
-  [:audioSpeeches :audioTranscriptions :codeInterpreterSessions :completions
-   :costs :embeddings :fileSearchCalls :images :moderations :vectorStores :webSearchCalls])
+(defn- usage-bucket-width [bucket-width]
+  (case bucket-width :minute "1m" :hour "1h" :day "1d" (impl/enum-name bucket-width)))
+
+(defn- ->usage-audio-speeches-params ^com.openai.models.admin.organization.usage.UsageAudioSpeechesParams [{:keys [start-time end-time bucket-width group-by limit page api-key-ids models project-ids user-ids]}]
+  (when-not (some? start-time) (impl/missing-key! :start-time))
+  (let [^com.openai.models.admin.organization.usage.UsageAudioSpeechesParams$Builder b (com.openai.models.admin.organization.usage.UsageAudioSpeechesParams/builder)]
+    (.startTime b (long start-time))
+    (when end-time (.endTime b (long end-time)))
+    (when bucket-width (.bucketWidth b (com.openai.models.admin.organization.usage.UsageAudioSpeechesParams$BucketWidth/of (usage-bucket-width bucket-width))))
+    (when group-by (.groupBy b ^java.util.List (mapv #(com.openai.models.admin.organization.usage.UsageAudioSpeechesParams$GroupBy/of (impl/enum-name %)) group-by)))
+    (when limit (.limit b (long limit))) (when page (.page b ^String page))
+    (when api-key-ids (.apiKeyIds b ^java.util.List api-key-ids))
+    (when models (.models b ^java.util.List models))
+    (when project-ids (.projectIds b ^java.util.List project-ids))
+    (when user-ids (.userIds b ^java.util.List user-ids))
+    (.build b)))
+(defn- usage-audio-speeches-result->map [^com.openai.models.admin.organization.usage.UsageAudioSpeechesResponse$Data$Result$OrganizationUsageAudioSpeechesResult r]
+  (cond-> {:characters (.characters r) :num-model-requests (.numModelRequests r)}
+    (.isPresent (.apiKeyId r)) (assoc :api-key-id (impl/opt-get (.apiKeyId r)))
+    (.isPresent (.model r)) (assoc :model (impl/opt-get (.model r)))
+    (.isPresent (.projectId r)) (assoc :project-id (impl/opt-get (.projectId r)))
+    (.isPresent (.userId r)) (assoc :user-id (impl/opt-get (.userId r)))))
+(defn- usage-audio-speeches-bucket->map [^com.openai.models.admin.organization.usage.UsageAudioSpeechesResponse$Data bucket]
+  {:start-time (.startTime bucket) :end-time (.endTime bucket)
+   :results (mapv (fn [^com.openai.models.admin.organization.usage.UsageAudioSpeechesResponse$Data$Result r] (usage-audio-speeches-result->map (.asOrganizationUsageAudioSpeeches r))) (.results bucket))})
+(defn usage-audio-speeches [^OpenAIClient client opts]
+  (impl/with-api-errors
+    (let [^UsageService s (.usage (organization client))]
+      (loop [request opts, result []]
+        (let [^com.openai.models.admin.organization.usage.UsageAudioSpeechesResponse response (.audioSpeeches s (->usage-audio-speeches-params request))
+              result (into result (map usage-audio-speeches-bucket->map (.data response)))
+              next-page (impl/opt-get (.nextPage response))]
+          (if next-page (recur (assoc opts :page next-page) result) result))))))
+
+(defn- ->usage-audio-transcriptions-params ^com.openai.models.admin.organization.usage.UsageAudioTranscriptionsParams [{:keys [start-time end-time bucket-width group-by limit page api-key-ids models project-ids user-ids]}]
+  (when-not (some? start-time) (impl/missing-key! :start-time))
+  (let [^com.openai.models.admin.organization.usage.UsageAudioTranscriptionsParams$Builder b (com.openai.models.admin.organization.usage.UsageAudioTranscriptionsParams/builder)]
+    (.startTime b (long start-time))
+    (when end-time (.endTime b (long end-time)))
+    (when bucket-width (.bucketWidth b (com.openai.models.admin.organization.usage.UsageAudioTranscriptionsParams$BucketWidth/of (usage-bucket-width bucket-width))))
+    (when group-by (.groupBy b ^java.util.List (mapv #(com.openai.models.admin.organization.usage.UsageAudioTranscriptionsParams$GroupBy/of (impl/enum-name %)) group-by)))
+    (when limit (.limit b (long limit))) (when page (.page b ^String page))
+    (when api-key-ids (.apiKeyIds b ^java.util.List api-key-ids))
+    (when models (.models b ^java.util.List models))
+    (when project-ids (.projectIds b ^java.util.List project-ids))
+    (when user-ids (.userIds b ^java.util.List user-ids))
+    (.build b)))
+(defn- usage-audio-transcriptions-result->map [^com.openai.models.admin.organization.usage.UsageAudioTranscriptionsResponse$Data$Result$OrganizationUsageAudioTranscriptionsResult r]
+  (cond-> {:num-model-requests (.numModelRequests r) :seconds (.seconds r)}
+    (.isPresent (.apiKeyId r)) (assoc :api-key-id (impl/opt-get (.apiKeyId r)))
+    (.isPresent (.model r)) (assoc :model (impl/opt-get (.model r)))
+    (.isPresent (.projectId r)) (assoc :project-id (impl/opt-get (.projectId r)))
+    (.isPresent (.userId r)) (assoc :user-id (impl/opt-get (.userId r)))))
+(defn- usage-audio-transcriptions-bucket->map [^com.openai.models.admin.organization.usage.UsageAudioTranscriptionsResponse$Data bucket]
+  {:start-time (.startTime bucket) :end-time (.endTime bucket)
+   :results (mapv (fn [^com.openai.models.admin.organization.usage.UsageAudioTranscriptionsResponse$Data$Result r] (usage-audio-transcriptions-result->map (.asOrganizationUsageAudioTranscriptions r))) (.results bucket))})
+(defn usage-audio-transcriptions [^OpenAIClient client opts]
+  (impl/with-api-errors
+    (let [^UsageService s (.usage (organization client))]
+      (loop [request opts, result []]
+        (let [^com.openai.models.admin.organization.usage.UsageAudioTranscriptionsResponse response (.audioTranscriptions s (->usage-audio-transcriptions-params request))
+              result (into result (map usage-audio-transcriptions-bucket->map (.data response)))
+              next-page (impl/opt-get (.nextPage response))]
+          (if next-page (recur (assoc opts :page next-page) result) result))))))
+
+(defn- ->usage-code-interpreter-sessions-params ^com.openai.models.admin.organization.usage.UsageCodeInterpreterSessionsParams [{:keys [start-time end-time bucket-width group-by limit page project-ids]}]
+  (when-not (some? start-time) (impl/missing-key! :start-time))
+  (let [^com.openai.models.admin.organization.usage.UsageCodeInterpreterSessionsParams$Builder b (com.openai.models.admin.organization.usage.UsageCodeInterpreterSessionsParams/builder)]
+    (.startTime b (long start-time))
+    (when end-time (.endTime b (long end-time)))
+    (when bucket-width (.bucketWidth b (com.openai.models.admin.organization.usage.UsageCodeInterpreterSessionsParams$BucketWidth/of (usage-bucket-width bucket-width))))
+    (when group-by (.groupBy b ^java.util.List (mapv #(com.openai.models.admin.organization.usage.UsageCodeInterpreterSessionsParams$GroupBy/of (impl/enum-name %)) group-by)))
+    (when limit (.limit b (long limit))) (when page (.page b ^String page))
+    (when project-ids (.projectIds b ^java.util.List project-ids))
+    (.build b)))
+(defn- usage-code-interpreter-sessions-result->map [^com.openai.models.admin.organization.usage.UsageCodeInterpreterSessionsResponse$Data$Result$OrganizationUsageCodeInterpreterSessionsResult r]
+  (cond-> {:num-sessions (.numSessions r)}
+    (.isPresent (.projectId r)) (assoc :project-id (impl/opt-get (.projectId r)))))
+(defn- usage-code-interpreter-sessions-bucket->map [^com.openai.models.admin.organization.usage.UsageCodeInterpreterSessionsResponse$Data bucket]
+  {:start-time (.startTime bucket) :end-time (.endTime bucket)
+   :results (mapv (fn [^com.openai.models.admin.organization.usage.UsageCodeInterpreterSessionsResponse$Data$Result r] (usage-code-interpreter-sessions-result->map (.asOrganizationUsageCodeInterpreterSessions r))) (.results bucket))})
+(defn usage-code-interpreter-sessions [^OpenAIClient client opts]
+  (impl/with-api-errors
+    (let [^UsageService s (.usage (organization client))]
+      (loop [request opts, result []]
+        (let [^com.openai.models.admin.organization.usage.UsageCodeInterpreterSessionsResponse response (.codeInterpreterSessions s (->usage-code-interpreter-sessions-params request))
+              result (into result (map usage-code-interpreter-sessions-bucket->map (.data response)))
+              next-page (impl/opt-get (.nextPage response))]
+          (if next-page (recur (assoc opts :page next-page) result) result))))))
+
+(defn- ->usage-completions-params ^com.openai.models.admin.organization.usage.UsageCompletionsParams [{:keys [start-time end-time bucket-width group-by limit page api-key-ids models project-ids user-ids batch]}]
+  (when-not (some? start-time) (impl/missing-key! :start-time))
+  (let [^com.openai.models.admin.organization.usage.UsageCompletionsParams$Builder b (com.openai.models.admin.organization.usage.UsageCompletionsParams/builder)]
+    (.startTime b (long start-time))
+    (when end-time (.endTime b (long end-time)))
+    (when bucket-width (.bucketWidth b (com.openai.models.admin.organization.usage.UsageCompletionsParams$BucketWidth/of (usage-bucket-width bucket-width))))
+    (when group-by (.groupBy b ^java.util.List (mapv #(com.openai.models.admin.organization.usage.UsageCompletionsParams$GroupBy/of (impl/enum-name %)) group-by)))
+    (when limit (.limit b (long limit))) (when page (.page b ^String page))
+    (when api-key-ids (.apiKeyIds b ^java.util.List api-key-ids))
+    (when models (.models b ^java.util.List models))
+    (when project-ids (.projectIds b ^java.util.List project-ids))
+    (when user-ids (.userIds b ^java.util.List user-ids))
+    (when (some? batch) (.batch b (boolean batch)))
+    (.build b)))
+(defn- usage-completions-result->map [^com.openai.models.admin.organization.usage.UsageCompletionsResponse$Data$Result$OrganizationUsageCompletionsResult r]
+  (cond-> {:input-tokens (.inputTokens r) :num-model-requests (.numModelRequests r) :output-tokens (.outputTokens r)}
+    (.isPresent (.apiKeyId r)) (assoc :api-key-id (impl/opt-get (.apiKeyId r)))
+    (.isPresent (.batch r)) (assoc :batch (impl/opt-get (.batch r)))
+    (.isPresent (.inputAudioTokens r)) (assoc :input-audio-tokens (impl/opt-get (.inputAudioTokens r)))
+    (.isPresent (.inputCachedTokens r)) (assoc :input-cached-tokens (impl/opt-get (.inputCachedTokens r)))
+    (.isPresent (.model r)) (assoc :model (impl/opt-get (.model r)))
+    (.isPresent (.outputAudioTokens r)) (assoc :output-audio-tokens (impl/opt-get (.outputAudioTokens r)))
+    (.isPresent (.projectId r)) (assoc :project-id (impl/opt-get (.projectId r)))
+    (.isPresent (.serviceTier r)) (assoc :service-tier (impl/opt-get (.serviceTier r)))
+    (.isPresent (.userId r)) (assoc :user-id (impl/opt-get (.userId r)))))
+(defn- usage-completions-bucket->map [^com.openai.models.admin.organization.usage.UsageCompletionsResponse$Data bucket]
+  {:start-time (.startTime bucket) :end-time (.endTime bucket)
+   :results (mapv (fn [^com.openai.models.admin.organization.usage.UsageCompletionsResponse$Data$Result r] (usage-completions-result->map (.asOrganizationUsageCompletions r))) (.results bucket))})
+(defn usage-completions [^OpenAIClient client opts]
+  (impl/with-api-errors
+    (let [^UsageService s (.usage (organization client))]
+      (loop [request opts, result []]
+        (let [^com.openai.models.admin.organization.usage.UsageCompletionsResponse response (.completions s (->usage-completions-params request))
+              result (into result (map usage-completions-bucket->map (.data response)))
+              next-page (impl/opt-get (.nextPage response))]
+          (if next-page (recur (assoc opts :page next-page) result) result))))))
+
+(defn- ->usage-costs-params ^com.openai.models.admin.organization.usage.UsageCostsParams [{:keys [start-time end-time bucket-width group-by limit page api-key-ids project-ids]}]
+  (when-not (some? start-time) (impl/missing-key! :start-time))
+  (let [^com.openai.models.admin.organization.usage.UsageCostsParams$Builder b (com.openai.models.admin.organization.usage.UsageCostsParams/builder)]
+    (.startTime b (long start-time))
+    (when end-time (.endTime b (long end-time)))
+    (when bucket-width (.bucketWidth b (com.openai.models.admin.organization.usage.UsageCostsParams$BucketWidth/of (usage-bucket-width bucket-width))))
+    (when group-by (.groupBy b ^java.util.List (mapv #(com.openai.models.admin.organization.usage.UsageCostsParams$GroupBy/of (impl/enum-name %)) group-by)))
+    (when limit (.limit b (long limit))) (when page (.page b ^String page))
+    (when api-key-ids (.apiKeyIds b ^java.util.List api-key-ids))
+    (when project-ids (.projectIds b ^java.util.List project-ids))
+    (.build b)))
+(defn- usage-cost-amount->map [^com.openai.models.admin.organization.usage.UsageCostsResponse$Data$Result$OrganizationCostsResult$Amount a]
+  (cond-> {} (.isPresent (.currency a)) (assoc :currency (impl/opt-get (.currency a)))
+    (.isPresent (.value a)) (assoc :value (impl/opt-get (.value a)))))
+(defn- usage-costs-result->map [^com.openai.models.admin.organization.usage.UsageCostsResponse$Data$Result$OrganizationCostsResult r]
+  (cond-> {}
+    (.isPresent (.amount r)) (assoc :amount (usage-cost-amount->map (impl/opt-get (.amount r))))
+    (.isPresent (.apiKeyId r)) (assoc :api-key-id (impl/opt-get (.apiKeyId r)))
+    (.isPresent (.lineItem r)) (assoc :line-item (impl/opt-get (.lineItem r)))
+    (.isPresent (.projectId r)) (assoc :project-id (impl/opt-get (.projectId r)))
+    (.isPresent (.quantity r)) (assoc :quantity (impl/opt-get (.quantity r)))))
+(defn- usage-costs-bucket->map [^com.openai.models.admin.organization.usage.UsageCostsResponse$Data bucket]
+  {:start-time (.startTime bucket) :end-time (.endTime bucket)
+   :results (mapv (fn [^com.openai.models.admin.organization.usage.UsageCostsResponse$Data$Result r] (usage-costs-result->map (.asOrganizationCosts r))) (.results bucket))})
+(defn usage-costs [^OpenAIClient client opts]
+  (impl/with-api-errors
+    (let [^UsageService s (.usage (organization client))]
+      (loop [request opts, result []]
+        (let [^com.openai.models.admin.organization.usage.UsageCostsResponse response (.costs s (->usage-costs-params request))
+              result (into result (map usage-costs-bucket->map (.data response)))
+              next-page (impl/opt-get (.nextPage response))]
+          (if next-page (recur (assoc opts :page next-page) result) result))))))
+
+(defn- ->usage-embeddings-params ^com.openai.models.admin.organization.usage.UsageEmbeddingsParams [{:keys [start-time end-time bucket-width group-by limit page api-key-ids models project-ids user-ids]}]
+  (when-not (some? start-time) (impl/missing-key! :start-time))
+  (let [^com.openai.models.admin.organization.usage.UsageEmbeddingsParams$Builder b (com.openai.models.admin.organization.usage.UsageEmbeddingsParams/builder)]
+    (.startTime b (long start-time))
+    (when end-time (.endTime b (long end-time)))
+    (when bucket-width (.bucketWidth b (com.openai.models.admin.organization.usage.UsageEmbeddingsParams$BucketWidth/of (usage-bucket-width bucket-width))))
+    (when group-by (.groupBy b ^java.util.List (mapv #(com.openai.models.admin.organization.usage.UsageEmbeddingsParams$GroupBy/of (impl/enum-name %)) group-by)))
+    (when limit (.limit b (long limit))) (when page (.page b ^String page))
+    (when api-key-ids (.apiKeyIds b ^java.util.List api-key-ids))
+    (when models (.models b ^java.util.List models))
+    (when project-ids (.projectIds b ^java.util.List project-ids))
+    (when user-ids (.userIds b ^java.util.List user-ids))
+    (.build b)))
+(defn- usage-embeddings-result->map [^com.openai.models.admin.organization.usage.UsageEmbeddingsResponse$Data$Result$OrganizationUsageEmbeddingsResult r]
+  (cond-> {:input-tokens (.inputTokens r) :num-model-requests (.numModelRequests r)}
+    (.isPresent (.apiKeyId r)) (assoc :api-key-id (impl/opt-get (.apiKeyId r)))
+    (.isPresent (.model r)) (assoc :model (impl/opt-get (.model r)))
+    (.isPresent (.projectId r)) (assoc :project-id (impl/opt-get (.projectId r)))
+    (.isPresent (.userId r)) (assoc :user-id (impl/opt-get (.userId r)))))
+(defn- usage-embeddings-bucket->map [^com.openai.models.admin.organization.usage.UsageEmbeddingsResponse$Data bucket]
+  {:start-time (.startTime bucket) :end-time (.endTime bucket)
+   :results (mapv (fn [^com.openai.models.admin.organization.usage.UsageEmbeddingsResponse$Data$Result r] (usage-embeddings-result->map (.asOrganizationUsageEmbeddings r))) (.results bucket))})
+(defn usage-embeddings [^OpenAIClient client opts]
+  (impl/with-api-errors
+    (let [^UsageService s (.usage (organization client))]
+      (loop [request opts, result []]
+        (let [^com.openai.models.admin.organization.usage.UsageEmbeddingsResponse response (.embeddings s (->usage-embeddings-params request))
+              result (into result (map usage-embeddings-bucket->map (.data response)))
+              next-page (impl/opt-get (.nextPage response))]
+          (if next-page (recur (assoc opts :page next-page) result) result))))))
+
+(defn- ->usage-file-search-calls-params ^com.openai.models.admin.organization.usage.UsageFileSearchCallsParams [{:keys [start-time end-time bucket-width group-by limit page api-key-ids project-ids user-ids]}]
+  (when-not (some? start-time) (impl/missing-key! :start-time))
+  (let [^com.openai.models.admin.organization.usage.UsageFileSearchCallsParams$Builder b (com.openai.models.admin.organization.usage.UsageFileSearchCallsParams/builder)]
+    (.startTime b (long start-time))
+    (when end-time (.endTime b (long end-time)))
+    (when bucket-width (.bucketWidth b (com.openai.models.admin.organization.usage.UsageFileSearchCallsParams$BucketWidth/of (usage-bucket-width bucket-width))))
+    (when group-by (.groupBy b ^java.util.List (mapv #(com.openai.models.admin.organization.usage.UsageFileSearchCallsParams$GroupBy/of (impl/enum-name %)) group-by)))
+    (when limit (.limit b (long limit))) (when page (.page b ^String page))
+    (when api-key-ids (.apiKeyIds b ^java.util.List api-key-ids))
+    (when project-ids (.projectIds b ^java.util.List project-ids))
+    (when user-ids (.userIds b ^java.util.List user-ids))
+    (.build b)))
+(defn- usage-file-search-calls-result->map [^com.openai.models.admin.organization.usage.UsageFileSearchCallsResponse$Data$Result$OrganizationUsageFileSearchesResult r]
+  (cond-> {:num-requests (.numRequests r)}
+    (.isPresent (.apiKeyId r)) (assoc :api-key-id (impl/opt-get (.apiKeyId r)))
+    (.isPresent (.projectId r)) (assoc :project-id (impl/opt-get (.projectId r)))
+    (.isPresent (.userId r)) (assoc :user-id (impl/opt-get (.userId r)))
+    (.isPresent (.vectorStoreId r)) (assoc :vector-store-id (impl/opt-get (.vectorStoreId r)))))
+(defn- usage-file-search-calls-bucket->map [^com.openai.models.admin.organization.usage.UsageFileSearchCallsResponse$Data bucket]
+  {:start-time (.startTime bucket) :end-time (.endTime bucket)
+   :results (mapv (fn [^com.openai.models.admin.organization.usage.UsageFileSearchCallsResponse$Data$Result r] (usage-file-search-calls-result->map (.asOrganizationUsageFileSearches r))) (.results bucket))})
+(defn usage-file-search-calls [^OpenAIClient client opts]
+  (impl/with-api-errors
+    (let [^UsageService s (.usage (organization client))]
+      (loop [request opts, result []]
+        (let [^com.openai.models.admin.organization.usage.UsageFileSearchCallsResponse response (.fileSearchCalls s (->usage-file-search-calls-params request))
+              result (into result (map usage-file-search-calls-bucket->map (.data response)))
+              next-page (impl/opt-get (.nextPage response))]
+          (if next-page (recur (assoc opts :page next-page) result) result))))))
+
+(defn- ->usage-images-params ^com.openai.models.admin.organization.usage.UsageImagesParams [{:keys [start-time end-time bucket-width group-by limit page api-key-ids models project-ids user-ids]}]
+  (when-not (some? start-time) (impl/missing-key! :start-time))
+  (let [^com.openai.models.admin.organization.usage.UsageImagesParams$Builder b (com.openai.models.admin.organization.usage.UsageImagesParams/builder)]
+    (.startTime b (long start-time))
+    (when end-time (.endTime b (long end-time)))
+    (when bucket-width (.bucketWidth b (com.openai.models.admin.organization.usage.UsageImagesParams$BucketWidth/of (usage-bucket-width bucket-width))))
+    (when group-by (.groupBy b ^java.util.List (mapv #(com.openai.models.admin.organization.usage.UsageImagesParams$GroupBy/of (impl/enum-name %)) group-by)))
+    (when limit (.limit b (long limit))) (when page (.page b ^String page))
+    (when api-key-ids (.apiKeyIds b ^java.util.List api-key-ids))
+    (when models (.models b ^java.util.List models))
+    (when project-ids (.projectIds b ^java.util.List project-ids))
+    (when user-ids (.userIds b ^java.util.List user-ids))
+    (.build b)))
+(defn- usage-images-result->map [^com.openai.models.admin.organization.usage.UsageImagesResponse$Data$Result$OrganizationUsageImagesResult r]
+  (cond-> {:images (.images r) :num-model-requests (.numModelRequests r)}
+    (.isPresent (.apiKeyId r)) (assoc :api-key-id (impl/opt-get (.apiKeyId r)))
+    (.isPresent (.model r)) (assoc :model (impl/opt-get (.model r)))
+    (.isPresent (.projectId r)) (assoc :project-id (impl/opt-get (.projectId r)))
+    (.isPresent (.size r)) (assoc :size (impl/opt-get (.size r)))
+    (.isPresent (.source r)) (assoc :source (impl/opt-get (.source r)))
+    (.isPresent (.userId r)) (assoc :user-id (impl/opt-get (.userId r)))))
+(defn- usage-images-bucket->map [^com.openai.models.admin.organization.usage.UsageImagesResponse$Data bucket]
+  {:start-time (.startTime bucket) :end-time (.endTime bucket)
+   :results (mapv (fn [^com.openai.models.admin.organization.usage.UsageImagesResponse$Data$Result r] (usage-images-result->map (.asOrganizationUsageImages r))) (.results bucket))})
+(defn usage-images [^OpenAIClient client opts]
+  (impl/with-api-errors
+    (let [^UsageService s (.usage (organization client))]
+      (loop [request opts, result []]
+        (let [^com.openai.models.admin.organization.usage.UsageImagesResponse response (.images s (->usage-images-params request))
+              result (into result (map usage-images-bucket->map (.data response)))
+              next-page (impl/opt-get (.nextPage response))]
+          (if next-page (recur (assoc opts :page next-page) result) result))))))
+
+(defn- ->usage-moderations-params ^com.openai.models.admin.organization.usage.UsageModerationsParams [{:keys [start-time end-time bucket-width group-by limit page api-key-ids models project-ids user-ids]}]
+  (when-not (some? start-time) (impl/missing-key! :start-time))
+  (let [^com.openai.models.admin.organization.usage.UsageModerationsParams$Builder b (com.openai.models.admin.organization.usage.UsageModerationsParams/builder)]
+    (.startTime b (long start-time))
+    (when end-time (.endTime b (long end-time)))
+    (when bucket-width (.bucketWidth b (com.openai.models.admin.organization.usage.UsageModerationsParams$BucketWidth/of (usage-bucket-width bucket-width))))
+    (when group-by (.groupBy b ^java.util.List (mapv #(com.openai.models.admin.organization.usage.UsageModerationsParams$GroupBy/of (impl/enum-name %)) group-by)))
+    (when limit (.limit b (long limit))) (when page (.page b ^String page))
+    (when api-key-ids (.apiKeyIds b ^java.util.List api-key-ids))
+    (when models (.models b ^java.util.List models))
+    (when project-ids (.projectIds b ^java.util.List project-ids))
+    (when user-ids (.userIds b ^java.util.List user-ids))
+    (.build b)))
+(defn- usage-moderations-result->map [^com.openai.models.admin.organization.usage.UsageModerationsResponse$Data$Result$OrganizationUsageModerationsResult r]
+  (cond-> {:input-tokens (.inputTokens r) :num-model-requests (.numModelRequests r)}
+    (.isPresent (.apiKeyId r)) (assoc :api-key-id (impl/opt-get (.apiKeyId r)))
+    (.isPresent (.model r)) (assoc :model (impl/opt-get (.model r)))
+    (.isPresent (.projectId r)) (assoc :project-id (impl/opt-get (.projectId r)))
+    (.isPresent (.userId r)) (assoc :user-id (impl/opt-get (.userId r)))))
+(defn- usage-moderations-bucket->map [^com.openai.models.admin.organization.usage.UsageModerationsResponse$Data bucket]
+  {:start-time (.startTime bucket) :end-time (.endTime bucket)
+   :results (mapv (fn [^com.openai.models.admin.organization.usage.UsageModerationsResponse$Data$Result r] (usage-moderations-result->map (.asOrganizationUsageModerations r))) (.results bucket))})
+(defn usage-moderations [^OpenAIClient client opts]
+  (impl/with-api-errors
+    (let [^UsageService s (.usage (organization client))]
+      (loop [request opts, result []]
+        (let [^com.openai.models.admin.organization.usage.UsageModerationsResponse response (.moderations s (->usage-moderations-params request))
+              result (into result (map usage-moderations-bucket->map (.data response)))
+              next-page (impl/opt-get (.nextPage response))]
+          (if next-page (recur (assoc opts :page next-page) result) result))))))
+
+(defn- ->usage-vector-stores-params ^com.openai.models.admin.organization.usage.UsageVectorStoresParams [{:keys [start-time end-time bucket-width group-by limit page project-ids]}]
+  (when-not (some? start-time) (impl/missing-key! :start-time))
+  (let [^com.openai.models.admin.organization.usage.UsageVectorStoresParams$Builder b (com.openai.models.admin.organization.usage.UsageVectorStoresParams/builder)]
+    (.startTime b (long start-time))
+    (when end-time (.endTime b (long end-time)))
+    (when bucket-width (.bucketWidth b (com.openai.models.admin.organization.usage.UsageVectorStoresParams$BucketWidth/of (usage-bucket-width bucket-width))))
+    (when group-by (.groupBy b ^java.util.List (mapv #(com.openai.models.admin.organization.usage.UsageVectorStoresParams$GroupBy/of (impl/enum-name %)) group-by)))
+    (when limit (.limit b (long limit))) (when page (.page b ^String page))
+    (when project-ids (.projectIds b ^java.util.List project-ids))
+    (.build b)))
+(defn- usage-vector-stores-result->map [^com.openai.models.admin.organization.usage.UsageVectorStoresResponse$Data$Result$OrganizationUsageVectorStoresResult r]
+  (cond-> {:usage-bytes (.usageBytes r)}
+    (.isPresent (.projectId r)) (assoc :project-id (impl/opt-get (.projectId r)))))
+(defn- usage-vector-stores-bucket->map [^com.openai.models.admin.organization.usage.UsageVectorStoresResponse$Data bucket]
+  {:start-time (.startTime bucket) :end-time (.endTime bucket)
+   :results (mapv (fn [^com.openai.models.admin.organization.usage.UsageVectorStoresResponse$Data$Result r] (usage-vector-stores-result->map (.asOrganizationUsageVectorStores r))) (.results bucket))})
+(defn usage-vector-stores [^OpenAIClient client opts]
+  (impl/with-api-errors
+    (let [^UsageService s (.usage (organization client))]
+      (loop [request opts, result []]
+        (let [^com.openai.models.admin.organization.usage.UsageVectorStoresResponse response (.vectorStores s (->usage-vector-stores-params request))
+              result (into result (map usage-vector-stores-bucket->map (.data response)))
+              next-page (impl/opt-get (.nextPage response))]
+          (if next-page (recur (assoc opts :page next-page) result) result))))))
+
+(defn- ->usage-web-search-calls-params ^com.openai.models.admin.organization.usage.UsageWebSearchCallsParams [{:keys [start-time end-time bucket-width group-by limit page api-key-ids models project-ids user-ids]}]
+  (when-not (some? start-time) (impl/missing-key! :start-time))
+  (let [^com.openai.models.admin.organization.usage.UsageWebSearchCallsParams$Builder b (com.openai.models.admin.organization.usage.UsageWebSearchCallsParams/builder)]
+    (.startTime b (long start-time))
+    (when end-time (.endTime b (long end-time)))
+    (when bucket-width (.bucketWidth b (com.openai.models.admin.organization.usage.UsageWebSearchCallsParams$BucketWidth/of (usage-bucket-width bucket-width))))
+    (when group-by (.groupBy b ^java.util.List (mapv #(com.openai.models.admin.organization.usage.UsageWebSearchCallsParams$GroupBy/of (impl/enum-name %)) group-by)))
+    (when limit (.limit b (long limit))) (when page (.page b ^String page))
+    (when api-key-ids (.apiKeyIds b ^java.util.List api-key-ids))
+    (when models (.models b ^java.util.List models))
+    (when project-ids (.projectIds b ^java.util.List project-ids))
+    (when user-ids (.userIds b ^java.util.List user-ids))
+    (.build b)))
+(defn- usage-web-search-calls-result->map [^com.openai.models.admin.organization.usage.UsageWebSearchCallsResponse$Data$Result$OrganizationUsageWebSearchesResult r]
+  (cond-> {:num-model-requests (.numModelRequests r) :num-requests (.numRequests r)}
+    (.isPresent (.apiKeyId r)) (assoc :api-key-id (impl/opt-get (.apiKeyId r)))
+    (.isPresent (.contextLevel r)) (assoc :context-level (impl/opt-get (.contextLevel r)))
+    (.isPresent (.model r)) (assoc :model (impl/opt-get (.model r)))
+    (.isPresent (.projectId r)) (assoc :project-id (impl/opt-get (.projectId r)))
+    (.isPresent (.userId r)) (assoc :user-id (impl/opt-get (.userId r)))))
+(defn- usage-web-search-calls-bucket->map [^com.openai.models.admin.organization.usage.UsageWebSearchCallsResponse$Data bucket]
+  {:start-time (.startTime bucket) :end-time (.endTime bucket)
+   :results (mapv (fn [^com.openai.models.admin.organization.usage.UsageWebSearchCallsResponse$Data$Result r] (usage-web-search-calls-result->map (.asOrganizationUsageWebSearches r))) (.results bucket))})
+(defn usage-web-search-calls [^OpenAIClient client opts]
+  (impl/with-api-errors
+    (let [^UsageService s (.usage (organization client))]
+      (loop [request opts, result []]
+        (let [^com.openai.models.admin.organization.usage.UsageWebSearchCallsResponse response (.webSearchCalls s (->usage-web-search-calls-params request))
+              result (into result (map usage-web-search-calls-bucket->map (.data response)))
+              next-page (impl/opt-get (.nextPage response))]
+          (if next-page (recur (assoc opts :page next-page) result) result))))))
