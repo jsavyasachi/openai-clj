@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.0] - 2026-07-11
+### Changed
+- **BREAKING (admin):** Admin API functions now take positional resource IDs
+  (project, group, user, role, …) followed by an optional kebab-case opts map,
+  replacing the single params map used in 0.7.0.
+- Reimplemented the Admin API and curated every service response converter as
+  hand-written, type-hinted interop returning present-only kebab-case maps;
+  removed the runtime-reflection admin engine and generic JSON-dump conversion
+  (retained only for webhook event unwrapping).
+- Strengthened no-network unit-test coverage across the service namespaces.
+
 ## [0.7.0] - 2026-07-11
 ### Added
 - Added stable images, audio, moderations, legacy completions, vector stores,
@@ -11,9 +22,6 @@
 - Upgraded `com.openai/openai-java` from 4.41.0 to 4.42.0.
 - Added GPT-5.6-sol reasoning mode, prompt-cache options, programmatic tool
   calling, and cache-write token usage.
-- Admin API and all service namespaces use hand-written typed interop with
-  curated, present-only response maps and idiomatic positional resource IDs
-  (no runtime reflection or generic JSON-dump conversion outside webhooks).
 
 ## [0.6.0] - 2026-07-10
 ### Added
