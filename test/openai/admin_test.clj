@@ -8,6 +8,9 @@
            (com.openai.models.admin.organization.groups.users UserCreateParams)
            (com.openai.models.admin.organization.invites Invite Invite$Builder Invite$Role Invite$Status)
            (com.openai.models.admin.organization.projects Project ProjectCreateParams)
+           (com.openai.models.admin.organization.projects.apikeys ProjectApiKey ProjectApiKey$Owner)
+           (com.openai.models.admin.organization.projects.groups ProjectGroup)
+           (com.openai.models.admin.organization.projects.users.roles RoleListResponse)
            (com.openai.models.admin.organization.spendalerts OrganizationSpendAlert OrganizationSpendAlert$Currency OrganizationSpendAlert$Interval OrganizationSpendAlert$NotificationChannel)
            (com.openai.models.admin.organization.usage UsageCompletionsParams UsageCompletionsResponse$Data UsageCompletionsResponse$Data$Result$OrganizationUsageCompletionsResult)))
 (set! *warn-on-reflection* true)
@@ -61,6 +64,51 @@
              #'projects/rate-limit-update-rate-limit
              #'projects/service-account-create #'projects/user-role-delete]]
     (is (fn? @v) (str (:name (meta v)) " should be callable"))))
+
+(deftest exposes-typed-project-admin-helpers
+  (doseq [sym '[->group-create-params project-api-key->map user-role-list->map]]
+    (is (fn? (some-> (ns-resolve 'openai.admin.projects sym) deref))
+        (str sym " should be defined"))))
+
+(deftest builds-project-group-create-params
+  (when-let [f (some-> (ns-resolve 'openai.admin.projects '->group-create-params) deref)]
+    (let [^com.openai.models.admin.organization.projects.groups.GroupCreateParams p
+          (f "proj_1" {:group-id "group_1" :role "member"})]
+      (is (= "proj_1" (impl/opt-get (.projectId p))))
+      (is (= "group_1" (.groupId p)))
+      (is (= "member" (.role p))))))
+
+(deftest converts-project-api-key-present-only
+  (when-let [f (some-> (ns-resolve 'openai.admin.projects 'project-api-key->map) deref)]
+    (let [empty (java.util.Optional/empty)
+          missing (com.openai.core.JsonField/ofNullable nil)
+          ^com.openai.models.admin.organization.projects.apikeys.ProjectApiKey$Owner$Builder ob
+          (ProjectApiKey$Owner/builder)
+          owner (do (.serviceAccount ob ^com.openai.core.JsonField missing)
+                    (.type ob ^com.openai.core.JsonField missing)
+                    (.user ob ^com.openai.core.JsonField missing)
+                    (.build ob))
+          ^com.openai.models.admin.organization.projects.apikeys.ProjectApiKey$Builder kb
+          (ProjectApiKey/builder)
+          k (do (.id kb "key_1") (.createdAt kb 123) (.lastUsedAt kb empty)
+                (.name kb "Deploy") (.owner kb owner)
+                (.redactedValue kb "sk-...abc") (.build kb))]
+      (is (= {:id "key_1" :created-at 123 :name "Deploy"
+              :owner {} :redacted-value "sk-...abc"}
+             (f k))))))
+
+(deftest converts-project-user-role-present-only
+  (when-let [f (some-> (ns-resolve 'openai.admin.projects 'user-role-list->map) deref)]
+    (let [empty (java.util.Optional/empty)
+          r (-> (RoleListResponse/builder) (.id "role_1")
+                (.assignmentSources empty) (.createdAt empty) (.createdBy empty)
+                (.createdByUserObj empty) (.description empty) (.metadata empty)
+                (.name "Reader")
+                (.permissions ["project.read"]) (.predefinedRole true)
+                (.resourceType "project") (.updatedAt empty) (.build))]
+      (is (= {:id "role_1" :name "Reader" :permissions ["project.read"]
+              :predefined-role true :resource-type "project"}
+             (f r))))))
 
 (deftest builds-admin-api-key-create-params
   (let [^AdminApiKeyCreateParams p (#'admin/->admin-api-key-create-params
