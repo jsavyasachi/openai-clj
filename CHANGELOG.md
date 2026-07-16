@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.0] - 2026-07-16
+### Added
+- Added the `openai.realtime` namespace with Realtime WebSocket sessions,
+  client-secret, session, transcription, and translation helpers, and SIP call
+  control.
+- Expanded Responses tool coverage with image generation, computer,
+  shell/local shell, apply patch, custom, tool search, and MCP approval tools,
+  plus their call-output input items.
+- Added lossless conversion for all Responses output-item variants.
+- Added normalization for the full Responses streaming-event surface.
+- Added a structured-output helper that parses `json_schema` response text and
+  validates it against the requested schema.
+
 ## [0.8.0] - 2026-07-11
 ### Changed
 - **BREAKING (admin):** Admin API functions now take positional resource IDs

@@ -17,13 +17,13 @@ official Java SDK.
 deps.edn:
 
 ```clojure
-net.clojars.savya/openai-clj {:mvn/version "0.8.0"}
+net.clojars.savya/openai-clj {:mvn/version "0.9.0"}
 ```
 
 Leiningen:
 
 ```clojure
-[net.clojars.savya/openai-clj "0.8.0"]
+[net.clojars.savya/openai-clj "0.9.0"]
 ```
 
 Tracks [`com.openai/openai-java` 4.42.0](https://github.com/openai/openai-java/releases/tag/v4.42.0).
@@ -82,6 +82,8 @@ Tracks [`com.openai/openai-java` 4.42.0](https://github.com/openai/openai-java/r
 ;;     :created-at 1790000000.0}
 ```
 
+## Responses API
+
 Request maps support `:model`, `:input`, `:instructions`,
 `:max-output-tokens`, `:max-tool-calls`, `:temperature`, `:top-p`,
 `:top-logprobs`, `:metadata`, `:previous-response-id`, `:store`, `:user`,
@@ -109,15 +111,61 @@ string or a vector of multimodal parts:
 Structured outputs use `:json-schema`:
 
 ```clojure
-{:model "gpt-5.2"
- :input "Return an answer object."
- :json-schema {:name "answer"
-               :description "One answer"
-               :strict true
-               :schema {:type "object"
-                        :properties {:answer {:type "string"}}
-                        :required ["answer"]}}}
+(def request
+  {:model "gpt-5.2"
+   :input "Return an answer object."
+   :json-schema {:name "answer"
+                 :description "One answer"
+                 :strict true
+                 :schema {:type "object"
+                          :properties {:answer {:type "string"}}
+                          :required ["answer"]}}})
 ```
+
+Parse and validate the returned JSON against the same schema:
+
+```clojure
+(def response (openai/create-response client request))
+(openai/parse-structured-output response (:json-schema request))
+;; => {:data {"answer" "..."} :errors []}
+```
+
+Responses tools cover `:function`, `:web-search`, `:file-search`,
+`:code-interpreter`, `:programmatic-tool-calling`, `:image-generation`,
+`:computer`, `:local-shell`, `:shell`, `:apply-patch`, `:custom`,
+`:tool-search`, and `:mcp`. Vector input accepts the matching
+`:function-call-output`, `:computer-call-output`, `:local-shell-call-output`,
+`:shell-call-output`, `:apply-patch-call-output`, `:custom-tool-call-output`,
+`:tool-search-output`, and `:mcp-approval-response` items.
+
+Response maps preserve all SDK output-item variants as kebab-case Clojure maps.
+`openai/stream` normalizes every Responses streaming event and calls its
+callback with the resulting `:type`-keyed map; `openai/stream-text` is the
+text-delta convenience wrapper.
+
+## Realtime API
+
+`openai.realtime` provides normalized WebSocket events through callbacks or a
+blocking queue:
+
+```clojure
+(require '[openai.realtime :as realtime])
+
+(def connection
+  (realtime/connect {:api-key (System/getenv "OPENAI_API_KEY")
+                     :model "gpt-realtime"}))
+
+(realtime/send! connection
+                {:type :session.update
+                 :session {:type :realtime
+                           :instructions "Be concise."}})
+(realtime/poll! connection 5000) ; normalized server event, or nil
+(realtime/close! connection)
+```
+
+The namespace also exposes client-secret creation, legacy session and
+transcription-session creation, translation client secrets and WebSockets, and
+SIP `accept-call`, `hangup-call`, `refer-call`, and `reject-call` operations.
 
 ## Chat Completions
 
@@ -173,8 +221,8 @@ normalized chunk:
 
 ## API namespaces
 
-All functions take an `openai.core/client` as their first argument and accept
-kebab-case request maps.
+Service functions take an `openai.core/client` as their first argument and
+accept kebab-case request maps. Realtime WebSockets take a transport config map.
 
 ```clojure
 (require '[openai.images :as images]
@@ -189,6 +237,7 @@ kebab-case request maps.
          '[openai.evals :as evals]
          '[openai.skills :as skills]
          '[openai.videos :as videos]
+         '[openai.realtime :as realtime]
          '[openai.webhooks :as webhooks]
          '[openai.admin :as admin]
          '[openai.admin.projects :as admin-projects])
@@ -215,11 +264,13 @@ kebab-case request maps.
 ```
 
 `openai.core` also contains Responses, Chat Completions, embeddings, files,
-batches, models, and stored Chat Completions. `openai.graders` reflects the
-stable grader-model service, which exposes no operations in SDK 4.42.0.
+batches, models, and stored Chat Completions. `openai.realtime` contains
+WebSocket, session, client-secret, transcription, translation, and SIP call
+helpers. `openai.graders` reflects the stable grader-model service, which
+exposes no operations in SDK 4.42.0.
 
-Out of scope: beta APIs, realtime WebSockets, async clients, raw-response
-accessors, and per-call `RequestOptions`.
+Out of scope: other beta APIs, async clients, raw-response accessors, and
+per-call `RequestOptions`.
 
 ## Running tests
 
