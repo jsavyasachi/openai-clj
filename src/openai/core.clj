@@ -247,6 +247,13 @@
                                          Tool$CodeInterpreter$Builder
                                          Tool$CodeInterpreter$Container$CodeInterpreterToolAuto
                                          Tool$CodeInterpreter$Container$CodeInterpreterToolAuto$Builder
+                                         Tool$ImageGeneration
+                                         Tool$ImageGeneration$Action
+                                         Tool$ImageGeneration$Background
+                                         Tool$ImageGeneration$InputFidelity
+                                         Tool$ImageGeneration$Moderation
+                                         Tool$ImageGeneration$OutputFormat
+                                         Tool$ImageGeneration$Quality
                                          Tool$Mcp
                                          Tool$Mcp$Builder
                                          Tool$Mcp$Headers
@@ -322,6 +329,110 @@
     (.output b ^String (impl/encode-output output))
     (ResponseInputItem/ofFunctionCallOutput (.build b))))
 
+(defn- ->computer-call-output ^ResponseInputItem
+  [{:keys [call-id output acknowledged-safety-checks status id]}]
+  (when-not call-id (impl/missing-key! :call-id))
+  (when-not output (impl/missing-key! :output))
+  (let [b (com.openai.models.responses.ResponseInputItem$ComputerCallOutput/builder)
+        screenshot (com.openai.models.responses.ResponseComputerToolCallOutputScreenshot/builder)]
+    (.callId b ^String call-id)
+    (when id (.id b ^String id))
+    (when-let [file-id (:file-id output)] (.fileId screenshot ^String file-id))
+    (when-let [image-url (:image-url output)] (.imageUrl screenshot ^String image-url))
+    (.output b (.build screenshot))
+    (doseq [{:keys [id code message]} acknowledged-safety-checks]
+      (when-not id (impl/missing-key! :id))
+      (let [check (com.openai.models.responses.ResponseInputItem$ComputerCallOutput$AcknowledgedSafetyCheck/builder)]
+        (.id check ^String id)
+        (when code (.code check ^String code))
+        (when message (.message check ^String message))
+        (.addAcknowledgedSafetyCheck b (.build check))))
+    (when status
+      (.status b (com.openai.models.responses.ResponseInputItem$ComputerCallOutput$Status/of
+                  (impl/enum-name status))))
+    (ResponseInputItem/ofComputerCallOutput (.build b))))
+
+(defn- ->local-shell-call-output ^ResponseInputItem [{:keys [id output status]}]
+  (when-not id (impl/missing-key! :id))
+  (when-not (some? output) (impl/missing-key! :output))
+  (let [b (com.openai.models.responses.ResponseInputItem$LocalShellCallOutput/builder)]
+    (.id b ^String id)
+    (.output b ^String (impl/encode-output output))
+    (when status
+      (.status b (com.openai.models.responses.ResponseInputItem$LocalShellCallOutput$Status/of
+                  (impl/enum-name status))))
+    (ResponseInputItem/ofLocalShellCallOutput (.build b))))
+
+(defn- ->shell-output-content [{:keys [stdout stderr exit-code outcome]}]
+  (let [b (com.openai.models.responses.ResponseFunctionShellCallOutputContent/builder)]
+    (.stdout b ^String (str (or stdout "")))
+    (.stderr b ^String (str (or stderr "")))
+    (if (= :timeout outcome)
+      (.outcomeTimeout b)
+      (.exitOutcome b (long (or exit-code 0))))
+    (.build b)))
+
+(defn- ->shell-call-output ^ResponseInputItem
+  [{:keys [call-id output id status max-output-length]}]
+  (when-not call-id (impl/missing-key! :call-id))
+  (when-not output (impl/missing-key! :output))
+  (let [b (com.openai.models.responses.ResponseInputItem$ShellCallOutput/builder)]
+    (.callId b ^String call-id)
+    (.output b ^java.util.List (mapv ->shell-output-content output))
+    (when id (.id b ^String id))
+    (when max-output-length (.maxOutputLength b (long max-output-length)))
+    (when status
+      (.status b (com.openai.models.responses.ResponseInputItem$ShellCallOutput$Status/of
+                  (impl/enum-name status))))
+    (ResponseInputItem/ofShellCallOutput (.build b))))
+
+(defn- ->apply-patch-call-output ^ResponseInputItem [{:keys [call-id status output id]}]
+  (when-not call-id (impl/missing-key! :call-id))
+  (when-not status (impl/missing-key! :status))
+  (let [b (com.openai.models.responses.ResponseInputItem$ApplyPatchCallOutput/builder)]
+    (.callId b ^String call-id)
+    (.status b (com.openai.models.responses.ResponseInputItem$ApplyPatchCallOutput$Status/of
+                (impl/enum-name status)))
+    (when id (.id b ^String id))
+    (when (some? output) (.output b ^String (impl/encode-output output)))
+    (ResponseInputItem/ofApplyPatchCallOutput (.build b))))
+
+(defn- ->custom-tool-call-output ^ResponseInputItem [{:keys [call-id output id]}]
+  (when-not call-id (impl/missing-key! :call-id))
+  (when-not (some? output) (impl/missing-key! :output))
+  (let [b (com.openai.models.responses.ResponseCustomToolCallOutput/builder)]
+    (.callId b ^String call-id)
+    (.output b ^String (impl/encode-output output))
+    (when id (.id b ^String id))
+    (ResponseInputItem/ofCustomToolCallOutput (.build b))))
+
+(declare ->tool)
+
+(defn- ->tool-search-output ^ResponseInputItem [{:keys [tools call-id id execution status]}]
+  (when-not tools (impl/missing-key! :tools))
+  (let [b (com.openai.models.responses.ResponseToolSearchOutputItemParam/builder)]
+    (.tools b ^java.util.List (mapv ->tool tools))
+    (when call-id (.callId b ^String call-id))
+    (when id (.id b ^String id))
+    (when execution
+      (.execution b (com.openai.models.responses.ResponseToolSearchOutputItemParam$Execution/of
+                     (impl/enum-name execution))))
+    (when status
+      (.status b (com.openai.models.responses.ResponseToolSearchOutputItemParam$Status/of
+                  (impl/enum-name status))))
+    (ResponseInputItem/ofToolSearchOutput (.build b))))
+
+(defn- ->mcp-approval-response ^ResponseInputItem
+  [{:keys [approval-request-id approve reason id]}]
+  (when-not approval-request-id (impl/missing-key! :approval-request-id))
+  (when-not (some? approve) (impl/missing-key! :approve))
+  (let [b (com.openai.models.responses.ResponseInputItem$McpApprovalResponse/builder)]
+    (.approvalRequestId b ^String approval-request-id)
+    (.approve b (boolean approve))
+    (when reason (.reason b ^String reason))
+    (when id (.id b ^String id))
+    (ResponseInputItem/ofMcpApprovalResponse (.build b))))
+
 (defn- ->input-text ^ResponseInputContent [{:keys [text]}]
   (let [^ResponseInputText$Builder b (ResponseInputText/builder)]
     (when-not text (impl/missing-key! :text))
@@ -351,8 +462,15 @@
                     {:openai/error :unknown-content-type :type type}))))
 
 (defn response-input-item ^ResponseInputItem [{:keys [role content type] :as item}]
-  (if (= :function-call-output (keyword type))
-    (->function-call-output item)
+  (case (keyword type)
+    :function-call-output (->function-call-output item)
+    :computer-call-output (->computer-call-output item)
+    :local-shell-call-output (->local-shell-call-output item)
+    :shell-call-output (->shell-call-output item)
+    :apply-patch-call-output (->apply-patch-call-output item)
+    :custom-tool-call-output (->custom-tool-call-output item)
+    :tool-search-output (->tool-search-output item)
+    :mcp-approval-response (->mcp-approval-response item)
     (let [^EasyInputMessage$Builder b (EasyInputMessage/builder)]
       (when-not role (impl/missing-key! :role))
       (when-not content (impl/missing-key! :content))
@@ -532,6 +650,62 @@
     (when headers (.headers b (->mcp-headers headers)))
     (.build b)))
 
+(defn- ->image-generation-tool
+  [{:keys [action background input-fidelity model moderation output-compression
+           output-format partial-images quality size]}]
+  (let [b (Tool$ImageGeneration/builder)]
+    (when action (.action b (Tool$ImageGeneration$Action/of (impl/enum-name action))))
+    (when background (.background b (Tool$ImageGeneration$Background/of (impl/enum-name background))))
+    (when input-fidelity (.inputFidelity b (Tool$ImageGeneration$InputFidelity/of (impl/enum-name input-fidelity))))
+    (when model (.model b ^String model))
+    (when moderation (.moderation b (Tool$ImageGeneration$Moderation/of (impl/enum-name moderation))))
+    (when output-compression (.outputCompression b (long output-compression)))
+    (when output-format (.outputFormat b (Tool$ImageGeneration$OutputFormat/of (impl/enum-name output-format))))
+    (when partial-images (.partialImages b (long partial-images)))
+    (when quality (.quality b (Tool$ImageGeneration$Quality/of (impl/enum-name quality))))
+    (when size (.size b ^String size))
+    (.build b)))
+
+(defn- ->shell-tool [{:keys [environment container-id]}]
+  (let [b (com.openai.models.responses.FunctionShellTool/builder)]
+    (case (keyword environment)
+      :local (.environment b (.build (com.openai.models.responses.LocalEnvironment/builder)))
+      :container-auto (.environment b (.build (com.openai.models.responses.ContainerAuto/builder)))
+      nil nil
+      (throw (ex-info (str "Unknown shell environment " environment)
+                      {:openai/error :unknown-shell-environment :environment environment})))
+    (when container-id (.containerReferenceEnvironment b ^String container-id))
+    (.build b)))
+
+(defn- ->custom-tool [{:keys [name description format defer-loading]}]
+  (when-not name (impl/missing-key! :name))
+  (let [b (com.openai.models.responses.CustomTool/builder)]
+    (.name b ^String name)
+    (when description (.description b ^String description))
+    (when (some? defer-loading) (.deferLoading b (boolean defer-loading)))
+    (cond
+      (= :text (keyword format)) (.formatText b)
+      (map? format)
+      (let [{:keys [definition syntax]} format
+            grammar (com.openai.models.CustomToolInputFormat$Grammar/builder)]
+        (when-not definition (impl/missing-key! :definition))
+        (when-not syntax (impl/missing-key! :syntax))
+        (.definition grammar ^String definition)
+        (.syntax grammar (com.openai.models.CustomToolInputFormat$Grammar$Syntax/of
+                          (impl/enum-name syntax)))
+        (.format b (.build grammar))))
+    (.build b)))
+
+(defn- ->tool-search-tool [{:keys [description execution parameters]}]
+  (when-not parameters (impl/missing-key! :parameters))
+  (let [b (com.openai.models.responses.ToolSearchTool/builder)]
+    (.parameters b (JsonValue/from (walk/stringify-keys parameters)))
+    (when description (.description b ^String description))
+    (when execution
+      (.execution b (com.openai.models.responses.ToolSearchTool$Execution/of
+                     (impl/enum-name execution))))
+    (.build b)))
+
 (defn- ->tool ^Tool [{:keys [type] :as tool}]
   (case (keyword type)
     :function (Tool/ofFunction (->function-tool tool))
@@ -540,6 +714,13 @@
     :mcp (Tool/ofMcp (->mcp-tool tool))
     :code-interpreter (Tool/ofCodeInterpreter (->code-interpreter tool))
     :programmatic-tool-calling (Tool/ofProgrammaticToolCalling)
+    :image-generation (Tool/ofImageGeneration (->image-generation-tool tool))
+    :computer (Tool/ofComputer (.build (com.openai.models.responses.ComputerTool/builder)))
+    :local-shell (Tool/ofLocalShell)
+    :shell (Tool/ofShell (->shell-tool tool))
+    :apply-patch (Tool/ofApplyPatch (.build (com.openai.models.responses.ApplyPatchTool/builder)))
+    :custom (Tool/ofCustom (->custom-tool tool))
+    :tool-search (Tool/ofSearch (->tool-search-tool tool))
     (throw (ex-info (str "Unknown tool type " type)
                     {:openai/error :unknown-tool-type :type type}))))
 
@@ -689,74 +870,55 @@
    :id (.id m)
    :content (mapv content->map (.content m))})
 
+(declare sdk-output->map)
+
 (defn- function-call->map [^ResponseFunctionToolCall f]
-  (cond-> {:type :function-call
-           :name (.name f)
-           :call-id (.callId f)
-           :arguments (impl/parse-arguments (.arguments f))}
-    (.isPresent (.id f)) (assoc :id (.get (.id f)))))
+  (assoc (sdk-output->map :function-call f)
+         :arguments (impl/parse-arguments (.arguments f))))
 
 (defn- reasoning->map [^ResponseReasoningItem r]
   (cond-> {:type :reasoning
            :id (.id r)}
     (.isPresent (.status r)) (assoc :status (impl/->keyword (.asString ^ResponseReasoningItem$Status (.get (.status r)))))
-    (seq (.summary r)) (assoc :summary (mapv #(.text ^ResponseReasoningItem$Summary %) (.summary r)))))
+    (seq (.summary r)) (assoc :summary (mapv #(.text ^ResponseReasoningItem$Summary %) (.summary r)))
+    (.isPresent (.content r)) (assoc :content (impl/sdk-object->clj (.get (.content r))))
+    (.isPresent (.encryptedContent r)) (assoc :encrypted-content (.get (.encryptedContent r)))))
+
+(defn- sdk-output->map [type value]
+  (let [m (assoc (impl/sdk-object->clj value) :type type)]
+    (cond-> m
+      (string? (:status m)) (update :status impl/->keyword)
+      (string? (:execution m)) (update :execution impl/->keyword))))
 
 (defn- web-search-call->map [^ResponseFunctionWebSearch c]
-  {:type :web-search-call :status (impl/->keyword (.asString (.status c)))})
+  (sdk-output->map :web-search-call c))
 
 (defn- file-search-call->map [^com.openai.models.responses.ResponseFileSearchToolCall c]
-  {:type :file-search-call :status (impl/->keyword (.asString (.status c)))})
+  (sdk-output->map :file-search-call c))
 
 (defn- code-interpreter-call->map [^com.openai.models.responses.ResponseCodeInterpreterToolCall c]
-  {:type :code-interpreter-call :status (impl/->keyword (.asString (.status c)))})
+  (sdk-output->map :code-interpreter-call c))
 
 (defn- image-generation-call->map [^ResponseOutputItem$ImageGenerationCall c]
-  (cond-> {:type :image-generation-call
-           :id (.id c)
-           :status (impl/->keyword (.asString (.status c)))}
-    (.isPresent (.result c)) (assoc :result (.get (.result c)))))
+  (sdk-output->map :image-generation-call c))
 
 (defn- mcp-call->map [^ResponseOutputItem$McpCall c]
-  (cond-> {:type :mcp-call
-           :id (.id c)
-           :name (.name c)
-           :server-label (.serverLabel c)
-    :arguments (.arguments c)}
-    (.isPresent (.status c)) (assoc :status (impl/->keyword (.asString ^ResponseOutputItem$McpCall$Status (.get (.status c)))))
-    (.isPresent (.output c)) (assoc :output (.get (.output c)))
-    (.isPresent (.error c)) (assoc :error (.get (.error c)))))
+  (sdk-output->map :mcp-call c))
 
 (defn- mcp-list-tools->map [^ResponseOutputItem$McpListTools c]
-  (cond-> {:type :mcp-list-tools
-           :id (.id c)
-           :server-label (.serverLabel c)}
-    (.isPresent (.error c)) (assoc :error (.get (.error c)))))
+  (sdk-output->map :mcp-list-tools c))
 
 (defn- mcp-approval-request->map [^ResponseOutputItem$McpApprovalRequest c]
-  {:type :mcp-approval-request
-   :id (.id c)
-   :name (.name c)
-   :server-label (.serverLabel c)
-   :arguments (.arguments c)})
+  (sdk-output->map :mcp-approval-request c))
 
 (defn- custom-tool-call->map [^com.openai.models.responses.ResponseCustomToolCall c]
-  (cond-> {:type :custom-tool-call
-           :name (.name c)
-           :input (.input c)
-           :call-id (.callId c)}
-    (.isPresent (.id c)) (assoc :id (.get (.id c)))))
+  (sdk-output->map :custom-tool-call c))
 
 (defn- local-shell-call->map [^ResponseOutputItem$LocalShellCall c]
-  {:type :local-shell-call
-   :id (.id c)
-   :status (impl/->keyword (.asString (.status c)))
-   :call-id (.callId c)})
+  (sdk-output->map :local-shell-call c))
 
 (defn- computer-call->map [^com.openai.models.responses.ResponseComputerToolCall c]
-  {:type :computer-call
-   :id (.id c)
-   :status (impl/->keyword (.asString (.status c)))})
+  (sdk-output->map :computer-call c))
 
 (defn- output-item->map [^ResponseOutputItem item]
   (cond
@@ -773,6 +935,21 @@
     (.isCustomToolCall item) (custom-tool-call->map (.asCustomToolCall item))
     (.isLocalShellCall item) (local-shell-call->map (.asLocalShellCall item))
     (.isComputerCall item) (computer-call->map (.asComputerCall item))
+    (.isFunctionCallOutput item) (sdk-output->map :function-call-output (.asFunctionCallOutput item))
+    (.isComputerCallOutput item) (sdk-output->map :computer-call-output (.asComputerCallOutput item))
+    (.isProgram item) (sdk-output->map :program (.asProgram item))
+    (.isProgramOutput item) (sdk-output->map :program-output (.asProgramOutput item))
+    (.isToolSearchCall item) (sdk-output->map :tool-search-call (.asToolSearchCall item))
+    (.isToolSearchOutput item) (sdk-output->map :tool-search-output (.asToolSearchOutput item))
+    (.isAdditionalTools item) (sdk-output->map :additional-tools (.asAdditionalTools item))
+    (.isCompaction item) (sdk-output->map :compaction (.asCompaction item))
+    (.isLocalShellCallOutput item) (sdk-output->map :local-shell-call-output (.asLocalShellCallOutput item))
+    (.isShellCall item) (sdk-output->map :shell-call (.asShellCall item))
+    (.isShellCallOutput item) (sdk-output->map :shell-call-output (.asShellCallOutput item))
+    (.isApplyPatchCall item) (sdk-output->map :apply-patch-call (.asApplyPatchCall item))
+    (.isApplyPatchCallOutput item) (sdk-output->map :apply-patch-call-output (.asApplyPatchCallOutput item))
+    (.isMcpApprovalResponse item) (sdk-output->map :mcp-approval-response (.asMcpApprovalResponse item))
+    (.isCustomToolCallOutput item) (sdk-output->map :custom-tool-call-output (.asCustomToolCallOutput item))
     :else {:type :unknown}))
 
 (defn- input-message-item->map [^ResponseInputMessageItem m]
@@ -831,6 +1008,18 @@
       (.isPresent (.error r)) (assoc :error (error->map (.get (.error r))))
       (.isPresent (.incompleteDetails r)) (assoc :incomplete-details (incomplete-details->map (.get (.incompleteDetails r))))
       (.isPresent (.previousResponseId r)) (assoc :previous-response-id (.get (.previousResponseId r))))))
+
+(defn parse-structured-output
+  "Parse a Responses `:text` value and validate it against a `:json-schema`
+  config (or a raw schema). Returns `{:data ... :errors [...]}`."
+  [response json-schema]
+  (let [schema (or (:schema json-schema) (get json-schema "schema") json-schema)]
+    (try
+      (let [data (impl/parse-json (:text response))]
+        {:data data :errors (impl/validate-json-schema schema data)})
+      (catch Exception e
+        {:data nil
+         :errors [{:path [] :error :invalid-json :message (.getMessage e)}]}))))
 
 (defn create-response
   "Send a Responses API request and return a Clojure map.

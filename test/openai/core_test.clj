@@ -49,6 +49,7 @@
                                         ResponseOutputItem$McpCall
                                         ResponseOutputItem$McpCall$Status
                                         ResponseOutputItem$McpListTools
+                                        ResponseOutputItem$McpListTools$Tool
                                         ResponseOutputItem$McpApprovalRequest
                                         ResponseOutputItem$ImageGenerationCall
                                         ResponseOutputItem$ImageGenerationCall$Status
@@ -335,6 +336,68 @@
                                          :input "hi"
                                          :tools [{:type :programmatic-tool-calling}]}))))]
       (is (.isProgrammaticToolCalling t))))
+  (testing "image generation"
+    (let [t (first (opt (.tools (params {:model "gpt-5.2"
+                                         :input "hi"
+                                         :tools [{:type :image-generation
+                                                  :action :edit
+                                                  :background :transparent
+                                                  :output-format :png
+                                                  :quality :high
+                                                  :size "1024x1024"
+                                                  :partial-images 2}]}))))
+          image (.asImageGeneration t)]
+      (is (.isImageGeneration t))
+      (is (= "edit" (.asString (opt (.action image)))))
+      (is (= "transparent" (.asString (opt (.background image)))))
+      (is (= "png" (.asString (opt (.outputFormat image)))))
+      (is (= "high" (.asString (opt (.quality image)))))
+      (is (= "1024x1024" (.asString (opt (.size image)))))
+      (is (= 2 (opt (.partialImages image))))))
+  (testing "computer and local shell"
+    (let [tools (opt (.tools (params {:model "gpt-5.2"
+                                      :input "hi"
+                                      :tools [{:type :computer}
+                                              {:type :local-shell}]})))]
+      (is (.isComputer (first tools)))
+      (is (.isLocalShell (second tools)))))
+  (testing "shell"
+    (let [t (first (opt (.tools (params {:model "gpt-5.2"
+                                         :input "hi"
+                                         :tools [{:type :shell
+                                                  :environment :local}]}))))]
+      (is (.isShell t))
+      (is (.isLocal (opt (.environment (.asShell t)))))))
+  (testing "apply patch"
+    (let [t (first (opt (.tools (params {:model "gpt-5.2"
+                                         :input "hi"
+                                         :tools [{:type :apply-patch}]}))))]
+      (is (.isApplyPatch t))))
+  (testing "custom"
+    (let [t (first (opt (.tools (params {:model "gpt-5.2"
+                                         :input "hi"
+                                         :tools [{:type :custom
+                                                  :name "lint"
+                                                  :description "Run lint"
+                                                  :format :text}]}))))
+          custom (.asCustom t)]
+      (is (.isCustom t))
+      (is (= "lint" (.name custom)))
+      (is (= "Run lint" (opt (.description custom))))
+      (is (.isText (opt (.format custom))))))
+  (testing "tool search"
+    (let [t (first (opt (.tools (params {:model "gpt-5.2"
+                                         :input "hi"
+                                         :tools [{:type :tool-search
+                                                  :description "Find a tool"
+                                                  :execution :client
+                                                  :parameters {:query "lint"}}]}))))
+          search (.asSearch t)]
+      (is (.isSearch t))
+      (is (= "Find a tool" (opt (.description search))))
+      (is (= "client" (.asString (opt (.execution search)))))
+      (is (= "lint"
+             (get (.convert (._parameters search) java.util.Map) "query")))))
   (testing "unknown tool type"
     (is (= {:openai/error :unknown-tool-type :type :bogus}
            (ex-data-for #(params {:model "gpt-5.2"
@@ -397,6 +460,27 @@
                                   :input "hi"
                                   :json-schema {:name "answer"}}))))))
 
+(deftest parses-and-validates-structured-response-output
+  (let [schema {:name "answer"
+                :schema {:type "object"
+                         :properties {:answer {:type "string"}
+                                      :sources {:type "array"
+                                                :items {:type "string"}}}
+                         :required ["answer"]
+                         :additionalProperties false}}]
+    (is (= {:data {:answer "yes" :sources ["docs"]} :errors []}
+           (openai/parse-structured-output
+            {:text "{\"answer\":\"yes\",\"sources\":[\"docs\"]}"}
+            schema)))
+    (is (= [{:path [:answer] :error :type :expected "string" :actual "integer"}
+            {:path [] :error :additional-property :key :extra}]
+           (:errors (openai/parse-structured-output
+                     {:text "{\"answer\":42,\"extra\":true}"}
+                     schema))))
+    (is (= :invalid-json
+           (-> (openai/parse-structured-output {:text "{bad"} schema)
+               :errors first :error)))))
+
 (deftest translates-input-token-count-params
   (let [p (input-token-count-params {:model "gpt-5.2"
                                      :input [{:role :user :content "hi"}]
@@ -439,6 +523,55 @@
                               :output {:forecast "sunny"}}]})
           fco (.asFunctionCallOutput (first (.asResponse (opt (.input p)))))]
       (is (= "{\"forecast\":\"sunny\"}" (.asString (.output fco)))))))
+
+(deftest translates-agent-tool-output-inputs
+  (let [p (params {:model "gpt-5.2"
+                   :input [{:type :computer-call-output
+                            :call-id "call_computer"
+                            :output {:image-url "data:image/png;base64,abc"}
+                            :acknowledged-safety-checks [{:id "safe_1"
+                                                          :code "policy"
+                                                          :message "approved"}]}
+                           {:type :local-shell-call-output
+                            :id "shell_1"
+                            :output "ok"
+                            :status :completed}
+                           {:type :shell-call-output
+                            :call-id "call_shell"
+                            :output [{:stdout "ok" :stderr "" :exit-code 0}]}
+                           {:type :apply-patch-call-output
+                            :call-id "call_patch"
+                            :status :completed
+                            :output "done"}
+                           {:type :custom-tool-call-output
+                            :call-id "call_custom"
+                            :output {:ok true}}
+                           {:type :tool-search-output
+                            :call-id "call_search"
+                            :execution :client
+                            :status :completed
+                            :tools [{:type :custom :name "lint"}]}
+                           {:type :mcp-approval-response
+                            :approval-request-id "approval_1"
+                            :approve true
+                            :reason "trusted"}]})
+        xs (.asResponse (opt (.input p)))
+        computer (.asComputerCallOutput (nth xs 0))
+        local-shell (.asLocalShellCallOutput (nth xs 1))
+        shell (.asShellCallOutput (nth xs 2))
+        patch (.asApplyPatchCallOutput (nth xs 3))
+        custom (.asCustomToolCallOutput (nth xs 4))
+        search (.asToolSearchOutput (nth xs 5))
+        approval (.asMcpApprovalResponse (nth xs 6))]
+    (is (= "data:image/png;base64,abc" (opt (.imageUrl (.output computer)))))
+    (is (= "safe_1" (-> computer .acknowledgedSafetyChecks opt first .id)))
+    (is (= "ok" (.output local-shell)))
+    (is (= 0 (-> shell .output first .outcome .asExit .exitCode)))
+    (is (= "done" (opt (.output patch))))
+    (is (= "{\"ok\":true}" (.asString (.output custom))))
+    (is (.isCustom (first (.tools search))))
+    (is (true? (.approve approval)))
+    (is (= "trusted" (opt (.reason approval))))))
 
 (defn- message-content-list [p]
   (-> ^ResponseCreateParams p
@@ -707,11 +840,101 @@
             {:type :local-shell-call
              :id "shell_1"
              :status :completed
-             :call-id "call_shell"}
+             :call-id "call_shell"
+             :action {:command ["pwd"] :env {} :type "exec"}}
             {:type :computer-call
              :id "comp_1"
-             :status :completed}]
+             :status :completed
+             :call-id "call_comp"
+             :pending-safety-checks []}]
            (:output m)))))
+
+(deftest maps-agent-output-items-losslessly
+  (let [web (ResponseOutputItem/ofWebSearchCall
+             (-> (com.openai.models.responses.ResponseFunctionWebSearch/builder)
+                 (.id "web_1")
+                 (.action (-> (com.openai.models.responses.ResponseFunctionWebSearch$Action$Search/builder)
+                              (.query "openai-java")
+                              (.queries ["openai-java"])
+                              (.sources [])
+                              (.build)))
+                 (.status (com.openai.models.responses.ResponseFunctionWebSearch$Status/of "completed"))
+                 (.build)))
+        file (ResponseOutputItem/ofFileSearchCall
+              (-> (com.openai.models.responses.ResponseFileSearchToolCall/builder)
+                  (.id "file_search_1")
+                  (.queries ["responses"])
+                  (.status (com.openai.models.responses.ResponseFileSearchToolCall$Status/of "completed"))
+                  (.results [(-> (com.openai.models.responses.ResponseFileSearchToolCall$Result/builder)
+                                 (.fileId "file_1")
+                                 (.filename "guide.md")
+                                 (.score (float 0.9))
+                                 (.text "result")
+                                 (.build))])
+                  (.build)))
+        code (ResponseOutputItem/ofCodeInterpreterCall
+              (-> (com.openai.models.responses.ResponseCodeInterpreterToolCall/builder)
+                  (.id "code_1")
+                  (.code "(+ 1 2)")
+                  (.containerId "container_1")
+                  (.addLogsOutput "3")
+                  (.status (com.openai.models.responses.ResponseCodeInterpreterToolCall$Status/of "completed"))
+                  (.build)))
+        mcp-tools (ResponseOutputItem/ofMcpListTools
+                   (-> (ResponseOutputItem$McpListTools/builder)
+                       (.id "mcp_tools_1")
+                       (.serverLabel "docs")
+                       (.tools [(-> (ResponseOutputItem$McpListTools$Tool/builder)
+                                    (.name "search")
+                                    (.description "Search docs")
+                                    (.inputSchema (com.openai.core.JsonValue/from {"type" "object"}))
+                                    (.annotations (com.openai.core.JsonValue/from {"readOnly" true}))
+                                    (.build))])
+                       (.build)))
+        shell (ResponseOutputItem/ofShellCall
+               (-> (com.openai.models.responses.ResponseFunctionShellToolCall/builder)
+                   (.id "shell_2")
+                   (.callId "call_shell_2")
+                   (.action (-> (com.openai.models.responses.ResponseFunctionShellToolCall$Action/builder)
+                                (.commands ["pwd" "ls"])
+                                (.timeoutMs 1000)
+                                (.maxOutputLength 4096)
+                                (.build)))
+                   (.environment (-> (com.openai.models.responses.ResponseLocalEnvironment/builder)
+                                     (.build)))
+                   (.status (com.openai.models.responses.ResponseFunctionShellToolCall$Status/of "completed"))
+                   (.build)))
+        patch (ResponseOutputItem/ofApplyPatchCall
+               (-> (com.openai.models.responses.ResponseApplyPatchToolCall/builder)
+                   (.id "patch_1")
+                   (.callId "call_patch_1")
+                   (.operation (-> (com.openai.models.responses.ResponseApplyPatchToolCall$Operation$UpdateFile/builder)
+                                   (.path "src/core.clj")
+                                   (.diff "@@")
+                                   (.build)))
+                   (.status (com.openai.models.responses.ResponseApplyPatchToolCall$Status/of "completed"))
+                   (.build)))
+        custom-tool (-> (com.openai.models.responses.CustomTool/builder) (.name "lint") (.build))
+        tool-output (ResponseOutputItem/ofToolSearchOutput
+                     (-> (com.openai.models.responses.ResponseToolSearchOutputItem/builder)
+                         (.id "tools_1")
+                         (.callId "call_search_1")
+                         (.execution (com.openai.models.responses.ResponseToolSearchOutputItem$Execution/of "client"))
+                         (.status (com.openai.models.responses.ResponseToolSearchOutputItem$Status/of "completed"))
+                         (.tools [(com.openai.models.responses.Tool/ofCustom custom-tool)])
+                         (.build)))
+        output (:output (response->map (response [web file code mcp-tools shell patch tool-output])))
+        by-type (into {} (map (juxt :type identity)) output)]
+    (is (= {:type "search" :query "openai-java" :queries ["openai-java"] :sources []}
+           (get-in by-type [:web-search-call :action])))
+    (is (= ["responses"] (get-in by-type [:file-search-call :queries])))
+    (is (= "guide.md" (get-in by-type [:file-search-call :results 0 :filename])))
+    (is (= "(+ 1 2)" (get-in by-type [:code-interpreter-call :code])))
+    (is (= "3" (get-in by-type [:code-interpreter-call :outputs 0 :logs])))
+    (is (= "search" (get-in by-type [:mcp-list-tools :tools 0 :name])))
+    (is (= ["pwd" "ls"] (get-in by-type [:shell-call :action :commands])))
+    (is (= "src/core.clj" (get-in by-type [:apply-patch-call :operation :path])))
+    (is (= "lint" (get-in by-type [:tool-search-output :tools 0 :name])))))
 
 (deftest maps-output-text-annotations
   (let [m (response->map
