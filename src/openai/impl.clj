@@ -74,6 +74,93 @@
     (catch Exception _
       s)))
 
+(defn parse-json [^String s]
+  (json/read-value s json-mapper))
+
+(defn- schema-value [schema k]
+  (if (contains? schema k)
+    (get schema k)
+    (get schema (name k))))
+
+(defn- data-type [x]
+  (cond
+    (nil? x) "null"
+    (map? x) "object"
+    (sequential? x) "array"
+    (string? x) "string"
+    (integer? x) "integer"
+    (number? x) "number"
+    (instance? Boolean x) "boolean"
+    :else (.getSimpleName (class x))))
+
+(defn- type-valid? [expected x]
+  (case expected
+    "null" (nil? x)
+    "object" (map? x)
+    "array" (sequential? x)
+    "string" (string? x)
+    "integer" (integer? x)
+    "number" (number? x)
+    "boolean" (instance? Boolean x)
+    true))
+
+(declare validate-json-schema)
+
+(defn- validate-schema* [schema data path]
+  (let [expected (schema-value schema :type)
+        expected-types (if (sequential? expected) expected [expected])
+        type-error (when (and expected
+                              (not-any? #(type-valid? % data) expected-types))
+                     {:path path :error :type
+                      :expected expected
+                      :actual (data-type data)})]
+    (if type-error
+      [type-error]
+      (let [enum-values (schema-value schema :enum)
+            const-present? (or (contains? schema :const) (contains? schema "const"))
+            const-value (schema-value schema :const)
+            value-errors (cond-> []
+                           (and enum-values (not (some #(= data %) enum-values)))
+                           (conj {:path path :error :enum :allowed (vec enum-values)})
+                           (and const-present? (not= const-value data))
+                           (conj {:path path :error :const :expected const-value}))
+            object-errors
+            (when (map? data)
+              (let [properties (or (schema-value schema :properties) {})
+                    required (or (schema-value schema :required) [])
+                    additional (schema-value schema :additionalProperties)
+                    prop-key #(if (keyword? %) % (keyword (str %)))
+                    required-errors
+                    (keep (fn [k]
+                            (let [k' (prop-key k)]
+                              (when-not (contains? data k')
+                                {:path path :error :required :key k'})))
+                          required)
+                    property-errors
+                    (mapcat (fn [[k child-schema]]
+                              (let [k' (prop-key k)]
+                                (when (contains? data k')
+                                  (validate-schema* child-schema (get data k') (conj path k')))))
+                            properties)
+                    known (set (map (comp prop-key key) properties))
+                    additional-errors
+                    (when (false? additional)
+                      (for [k (sort-by name (remove known (keys data)))]
+                        {:path path :error :additional-property :key k}))]
+                (concat required-errors property-errors additional-errors)))
+            array-errors
+            (when (sequential? data)
+              (when-let [item-schema (schema-value schema :items)]
+                (mapcat (fn [[i x]] (validate-schema* item-schema x (conj path i)))
+                        (map-indexed vector data))))]
+        (vec (concat value-errors object-errors array-errors))))))
+
+(defn validate-json-schema
+  "Return JSON Schema conformance errors for parsed Clojure data. Supports the
+  structural keywords emitted by Responses strict schemas."
+  [schema data]
+  (validate-schema* schema data []))
+
 (defn encode-output [x]
   (if (string? x)
     x
@@ -96,7 +183,11 @@
   (walk/postwalk
    (fn [x]
      (if (map? x)
-       (into {} (map (fn [[k v]] [(->keyword k) v])) x)
+       (into {}
+             (keep (fn [[k v]]
+                     (let [k' (->keyword (if (keyword? k) (name k) k))]
+                       (when-not (= :valid k') [k' v]))))
+             x)
        x))
    (json/read-value (json/write-value-as-string value) json-mapper)))
 
