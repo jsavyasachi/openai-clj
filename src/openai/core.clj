@@ -1,7 +1,8 @@
 (ns openai.core
   "Core client plus Responses, Chat Completions, embeddings, files, batches,
   and models. Additional stable APIs live in sibling `openai.*` namespaces."
-  (:require [clojure.walk :as walk]
+  (:require [clojure.string :as str]
+            [clojure.walk :as walk]
             [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)
            (com.openai.client.okhttp OpenAIOkHttpClient
@@ -1199,7 +1200,14 @@
                     (cond-> {:type :error
                              :message (.message e)}
                       (.isPresent code) (assoc :code (.get code))))
-    :else {:type :other}))
+    (.isQueued ev) (let [e (.asQueued ev)]
+                     {:type :queued
+                      :response (response->map (.response e))})
+    :else (let [m (impl/sdk-object->clj ev)]
+            (update m :type #(-> %
+                                 (str/replace #"^response\." "")
+                                 (str/replace "." "-")
+                                 impl/->keyword)))))
 
 (defn- drain-stream
   ^String [^StreamResponse sr on-event]
