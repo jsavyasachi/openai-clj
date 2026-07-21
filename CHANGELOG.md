@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.10.0] - 2026-07-21
 ### Changed
 - Upgraded `com.openai/openai-java` to 4.43.0 and added `:owner-project-access`
   to project API key maps.
