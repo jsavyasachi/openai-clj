@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+### Added
+- Added the `:owner-project-access` filter to `api-key-list`.
+
 ## [0.10.0] - 2026-07-21
 ### Changed
 - Upgraded `com.openai/openai-java` to 4.43.0 and added `:owner-project-access`

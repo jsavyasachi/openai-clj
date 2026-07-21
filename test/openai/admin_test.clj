@@ -8,7 +8,7 @@
            (com.openai.models.admin.organization.groups.users UserCreateParams)
            (com.openai.models.admin.organization.invites Invite Invite$Builder Invite$Role Invite$Status)
            (com.openai.models.admin.organization.projects Project ProjectCreateParams)
-           (com.openai.models.admin.organization.projects.apikeys ProjectApiKey ProjectApiKey$Owner ProjectApiKey$OwnerProjectAccess)
+           (com.openai.models.admin.organization.projects.apikeys ApiKeyListParams ApiKeyListParams$OwnerProjectAccess ProjectApiKey ProjectApiKey$Owner ProjectApiKey$OwnerProjectAccess)
            (com.openai.models.admin.organization.projects.groups ProjectGroup)
            (com.openai.models.admin.organization.projects.ratelimits ProjectRateLimit RateLimitUpdateRateLimitParams)
            (com.openai.models.admin.organization.projects.serviceaccounts ProjectServiceAccount ServiceAccountCreateParams)
@@ -81,6 +81,16 @@
       (is (= "proj_1" (impl/opt-get (.projectId p))))
       (is (= "group_1" (.groupId p)))
       (is (= "member" (.role p))))))
+
+(deftest builds-project-api-key-list-params
+  (when-let [f (some-> (ns-resolve 'openai.admin.projects '->api-key-list-params) deref)]
+    (doseq [[option expected] [[:active ApiKeyListParams$OwnerProjectAccess/ACTIVE]
+                               [:inactive ApiKeyListParams$OwnerProjectAccess/INACTIVE]
+                               [:any ApiKeyListParams$OwnerProjectAccess/ANY]]]
+      (let [^ApiKeyListParams p (f "proj_1" {:owner-project-access option})]
+        (is (= expected (impl/opt-get (.ownerProjectAccess p))))))
+    (let [^ApiKeyListParams p (f "proj_1" {})]
+      (is (false? (.isPresent (.ownerProjectAccess p)))))))
 
 (deftest converts-project-api-key-present-only
   (when-let [f (some-> (ns-resolve 'openai.admin.projects 'project-api-key->map) deref)]

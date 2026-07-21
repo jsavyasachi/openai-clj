@@ -3,7 +3,7 @@
   (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)
            (com.openai.core JsonField)
-           (com.openai.models.admin.organization.projects.apikeys ApiKeyDeleteParams ApiKeyDeleteResponse ApiKeyListPage ApiKeyListParams ApiKeyRetrieveParams ProjectApiKey ProjectApiKey$Owner ProjectApiKey$Owner$ServiceAccount ProjectApiKey$Owner$User)
+           (com.openai.models.admin.organization.projects.apikeys ApiKeyDeleteParams ApiKeyDeleteResponse ApiKeyListPage ApiKeyListParams ApiKeyListParams$OwnerProjectAccess ApiKeyRetrieveParams ProjectApiKey ProjectApiKey$Owner ProjectApiKey$Owner$ServiceAccount ProjectApiKey$Owner$User)
            (com.openai.models.admin.organization.projects.certificates CertificateActivatePage CertificateActivateParams CertificateActivateResponse CertificateActivateResponse$CertificateDetails CertificateDeactivatePage CertificateDeactivateParams CertificateDeactivateResponse CertificateDeactivateResponse$CertificateDetails CertificateListPage CertificateListParams CertificateListParams$Order CertificateListResponse CertificateListResponse$CertificateDetails)
            (com.openai.models.admin.organization.projects.dataretention DataRetentionRetrieveParams DataRetentionUpdateParams DataRetentionUpdateParams$RetentionType ProjectDataRetention)
            (com.openai.models.admin.organization.projects.groups GroupCreateParams GroupDeleteParams GroupDeleteResponse GroupListPage GroupListParams GroupListParams$Order GroupRetrieveParams GroupRetrieveParams$GroupType ProjectGroup)
@@ -25,11 +25,12 @@
 (defn- ->api-key-retrieve-params ^ApiKeyRetrieveParams [^String project-id ^String key-id]
   (-> (ApiKeyRetrieveParams/builder) (.projectId project-id) (.apiKeyId key-id) (.build)))
 
-(defn- ->api-key-list-params ^ApiKeyListParams [^String project-id {:keys [after limit]}]
+(defn- ->api-key-list-params ^ApiKeyListParams [^String project-id {:keys [after limit owner-project-access]}]
   (let [b (ApiKeyListParams/builder)]
     (.projectId b project-id)
     (when after (.after b ^String after))
     (when limit (.limit b (long limit)))
+    (when owner-project-access (.ownerProjectAccess b (ApiKeyListParams$OwnerProjectAccess/of (impl/enum-name owner-project-access))))
     (.build b)))
 
 (defn- api-key-service-account->map [^ProjectApiKey$Owner$ServiceAccount a]
@@ -58,6 +59,8 @@
       (project-api-key->map (.retrieve svc (->api-key-retrieve-params project-id key-id))))))
 
 (defn api-key-list
+  "Lists project API keys. Opts accepts :after, :limit, and :owner-project-access
+  (:active, :inactive, or :any)."
   ([^OpenAIClient client ^String project-id] (api-key-list client project-id {}))
   ([^OpenAIClient client ^String project-id opts]
    (impl/with-api-errors
