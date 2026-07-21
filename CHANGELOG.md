@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.11.0] - 2026-07-21
 ### Added
 - Added the `:owner-project-access` filter to `api-key-list`.
 
