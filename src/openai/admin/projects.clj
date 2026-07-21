@@ -2,6 +2,7 @@
   "Project-scoped OpenAI Admin API wrappers."
   (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)
+           (com.openai.core JsonField)
            (com.openai.models.admin.organization.projects.apikeys ApiKeyDeleteParams ApiKeyDeleteResponse ApiKeyListPage ApiKeyListParams ApiKeyRetrieveParams ProjectApiKey ProjectApiKey$Owner ProjectApiKey$Owner$ServiceAccount ProjectApiKey$Owner$User)
            (com.openai.models.admin.organization.projects.certificates CertificateActivatePage CertificateActivateParams CertificateActivateResponse CertificateActivateResponse$CertificateDetails CertificateDeactivatePage CertificateDeactivateParams CertificateDeactivateResponse CertificateDeactivateResponse$CertificateDetails CertificateListPage CertificateListParams CertificateListParams$Order CertificateListResponse CertificateListResponse$CertificateDetails)
            (com.openai.models.admin.organization.projects.dataretention DataRetentionRetrieveParams DataRetentionUpdateParams DataRetentionUpdateParams$RetentionType ProjectDataRetention)
@@ -44,9 +45,12 @@
     (.isPresent (.user o)) (assoc :user (api-key-user->map (impl/opt-get (.user o))))))
 
 (defn- project-api-key->map [^ProjectApiKey k]
-  (cond-> {:id (.id k) :created-at (.createdAt k) :name (.name k)
-           :owner (api-key-owner->map (.owner k)) :redacted-value (.redactedValue k)}
-    (.isPresent (.lastUsedAt k)) (assoc :last-used-at (impl/opt-get (.lastUsedAt k)))))
+  (let [^JsonField owner-project-access (._ownerProjectAccess k)]
+    (cond-> {:id (.id k) :created-at (.createdAt k) :name (.name k)
+             :owner (api-key-owner->map (.owner k)) :redacted-value (.redactedValue k)}
+      (.isPresent (.lastUsedAt k)) (assoc :last-used-at (impl/opt-get (.lastUsedAt k)))
+      (and (not (.isMissing owner-project-access)) (not (.isNull owner-project-access)))
+      (assoc :owner-project-access (impl/->keyword (.asString (.ownerProjectAccess k)))))))
 
 (defn api-key-retrieve [^OpenAIClient client ^String project-id ^String key-id]
   (impl/with-api-errors

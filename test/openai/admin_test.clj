@@ -8,7 +8,7 @@
            (com.openai.models.admin.organization.groups.users UserCreateParams)
            (com.openai.models.admin.organization.invites Invite Invite$Builder Invite$Role Invite$Status)
            (com.openai.models.admin.organization.projects Project ProjectCreateParams)
-           (com.openai.models.admin.organization.projects.apikeys ProjectApiKey ProjectApiKey$Owner)
+           (com.openai.models.admin.organization.projects.apikeys ProjectApiKey ProjectApiKey$Owner ProjectApiKey$OwnerProjectAccess)
            (com.openai.models.admin.organization.projects.groups ProjectGroup)
            (com.openai.models.admin.organization.projects.ratelimits ProjectRateLimit RateLimitUpdateRateLimitParams)
            (com.openai.models.admin.organization.projects.serviceaccounts ProjectServiceAccount ServiceAccountCreateParams)
@@ -96,10 +96,19 @@
           (ProjectApiKey/builder)
           k (do (.id kb "key_1") (.createdAt kb 123) (.lastUsedAt kb empty)
                 (.name kb "Deploy") (.owner kb owner)
+                (.ownerProjectAccess kb ^com.openai.core.JsonField missing)
                 (.redactedValue kb "sk-...abc") (.build kb))]
       (is (= {:id "key_1" :created-at 123 :name "Deploy"
               :owner {} :redacted-value "sk-...abc"}
-             (f k))))))
+             (f k)))
+      (let [k (-> (ProjectApiKey/builder) (.id "key_2") (.createdAt 456)
+                  (.lastUsedAt ^com.openai.core.JsonField missing)
+                  (.name "Deploy") (.owner owner)
+                  (.ownerProjectAccess ProjectApiKey$OwnerProjectAccess/ACTIVE)
+                  (.redactedValue "sk-...def") (.build))]
+        (is (= {:id "key_2" :created-at 456 :name "Deploy" :owner {}
+                :owner-project-access :active :redacted-value "sk-...def"}
+               (f k)))))))
 
 (deftest converts-project-user-role-present-only
   (when-let [f (some-> (ns-resolve 'openai.admin.projects 'user-role-list->map) deref)]

@@ -26,7 +26,7 @@ Leiningen:
 [net.clojars.savya/openai-clj "0.9.0"]
 ```
 
-Tracks [`com.openai/openai-java` 4.42.0](https://github.com/openai/openai-java/releases/tag/v4.42.0).
+Tracks [`com.openai/openai-java` 4.43.0](https://github.com/openai/openai-java/releases/tag/v4.43.0).
 
 ## Documentation
 
@@ -267,7 +267,7 @@ accept kebab-case request maps. Realtime WebSockets take a transport config map.
 batches, models, and stored Chat Completions. `openai.realtime` contains
 WebSocket, session, client-secret, transcription, translation, and SIP call
 helpers. `openai.graders` reflects the stable grader-model service, which
-exposes no operations in SDK 4.42.0.
+exposes no operations in SDK 4.43.0.
 
 Out of scope: other beta APIs, async clients, raw-response accessors, and
 per-call `RequestOptions`.

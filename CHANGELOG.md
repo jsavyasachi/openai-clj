@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+### Changed
+- Upgraded `com.openai/openai-java` to 4.43.0 and added `:owner-project-access`
+  to project API key maps.
+
 ## [0.9.0] - 2026-07-16
 ### Added
 - Added the `openai.realtime` namespace with Realtime WebSocket sessions,
