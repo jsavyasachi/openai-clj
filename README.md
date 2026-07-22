@@ -4,8 +4,8 @@
 [![cljdoc](https://cljdoc.org/badge/net.clojars.savya/openai-clj)](https://cljdoc.org/d/net.clojars.savya/openai-clj/CURRENT)
 [![test](https://github.com/jsavyasachi/openai-clj/actions/workflows/test.yml/badge.svg)](https://github.com/jsavyasachi/openai-clj/actions/workflows/test.yml)
 
-Idiomatic Clojure wrapper over the stable OpenAI API surface exposed by the
-official Java SDK.
+Idiomatic Clojure client for the OpenAI API and any OpenAI-compatible provider,
+built on the official Java SDK.
 
 ## Stack
 
@@ -17,16 +17,49 @@ official Java SDK.
 deps.edn:
 
 ```clojure
-net.clojars.savya/openai-clj {:mvn/version "0.9.0"}
+net.clojars.savya/openai-clj {:mvn/version "0.12.1"}
 ```
 
 Leiningen:
 
 ```clojure
-[net.clojars.savya/openai-clj "0.9.0"]
+[net.clojars.savya/openai-clj "0.12.1"]
 ```
 
 Tracks [`com.openai/openai-java` 4.43.0](https://github.com/openai/openai-java/releases/tag/v4.43.0).
+
+## Providers
+
+Every function takes a client, and the client's `:base-url` points it at any
+endpoint that speaks the OpenAI wire protocol. The same code works across
+OpenAI-compatible providers:
+
+| Provider | `:base-url` |
+|---|---|
+| OpenAI (default) | omit |
+| Azure OpenAI | your resource endpoint (see [Azure OpenAI](doc/azure.md)) |
+| Groq | `https://api.groq.com/openai/v1` |
+| DeepSeek | `https://api.deepseek.com` |
+| Mistral | `https://api.mistral.ai/v1` |
+| xAI (Grok) | `https://api.x.ai/v1` |
+| Together | `https://api.together.xyz/v1` |
+| Fireworks | `https://api.fireworks.ai/inference/v1` |
+| Local (Ollama, vLLM, LM Studio) | e.g. `http://localhost:11434/v1` |
+
+```clojure
+(def client (openai/client {:api-key "gsk_..."
+                            :base-url "https://api.groq.com/openai/v1"}))
+
+(openai/create-chat-completion
+ client
+ {:model "llama-3.3-70b-versatile"
+  :messages [{:role :user :content "Hello"}]})
+```
+
+Use Chat Completions (`create-chat-completion`) for the broadest reach: the
+Responses API is OpenAI-specific and most compatible providers do not implement
+it. Only routes a provider actually serves will work; provider-specific
+extensions outside the OpenAI protocol are not covered.
 
 ## Documentation
 

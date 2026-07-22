@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1] - 2026-07-21
+### Documentation
+- Documented OpenAI-compatible provider support: `:base-url` targets Azure,
+  Groq, DeepSeek, Mistral, xAI, Together, Fireworks, and local servers.
+- Reframed the intro to reflect OpenAI plus OpenAI-compatible providers.
+- Corrected the stale install coordinates in the README.
+
 ## [0.12.0] - 2026-07-21
 ### Added
 - `openai.chatkit`: wraps the beta ChatKit API (session create/cancel, thread
