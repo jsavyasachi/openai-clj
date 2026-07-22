@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.12.0] - 2026-07-21
+### Added
+- `openai.chatkit`: wraps the beta ChatKit API (session create/cancel, thread
+  retrieve/list/delete, thread-item listing).
+- The deprecated Assistants API is intentionally excluded.
+
 ## [0.11.0] - 2026-07-21
 ### Added
 - Added the `:owner-project-access` filter to `api-key-list`.

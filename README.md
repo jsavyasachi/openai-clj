@@ -237,6 +237,7 @@ accept kebab-case request maps. Realtime WebSockets take a transport config map.
          '[openai.evals :as evals]
          '[openai.skills :as skills]
          '[openai.videos :as videos]
+         '[openai.chatkit :as chatkit]
          '[openai.realtime :as realtime]
          '[openai.webhooks :as webhooks]
          '[openai.admin :as admin]
@@ -258,6 +259,7 @@ accept kebab-case request maps. Realtime WebSockets take a transport config map.
 (skills/list client {:limit 20})
 (videos/create client {:model "sora-2" :prompt "Ocean sunrise"
                        :size "1280x720" :seconds "8"})
+(chatkit/create-session client {:workflow {:id "wf_123"} :user "user_42"})
 (webhooks/unwrap webhook-client raw-body request-headers)
 (admin/project-list admin-client {:limit 20})
 (admin-projects/service-account-list admin-client "proj_...")
@@ -269,8 +271,10 @@ WebSocket, session, client-secret, transcription, translation, and SIP call
 helpers. `openai.graders` reflects the stable grader-model service, which
 exposes no operations in SDK 4.43.0.
 
-Out of scope: other beta APIs, async clients, raw-response accessors, and
-per-call `RequestOptions`.
+Beta ChatKit is wrapped. The Assistants API (assistants/threads/runs) is
+deliberately not wrapped because the SDK marks it deprecated in favor of the
+Responses API. Async clients, raw-response accessors, and per-call
+`RequestOptions` remain out of scope.
 
 ## Running tests
 
