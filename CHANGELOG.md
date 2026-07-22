@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.12.2] - 2026-07-22
+### Documentation
+- Restated coverage as idiomatic parity with the Java SDK: every non-deprecated operation is wrapped. Clarified that async clients, raw-response accessors, and per-call `RequestOptions` are non-endpoint variants, not coverage gaps.
+
 ## [0.12.1] - 2026-07-21
 ### Documentation
 - Documented OpenAI-compatible provider support: `:base-url` targets Azure,

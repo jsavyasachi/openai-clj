@@ -304,10 +304,12 @@ WebSocket, session, client-secret, transcription, translation, and SIP call
 helpers. `openai.graders` reflects the stable grader-model service, which
 exposes no operations in SDK 4.43.0.
 
-Beta ChatKit is wrapped. The Assistants API (assistants/threads/runs) is
-deliberately not wrapped because the SDK marks it deprecated in favor of the
-Responses API. Async clients, raw-response accessors, and per-call
-`RequestOptions` remain out of scope.
+Coverage is idiomatic parity: every non-deprecated operation the Java SDK
+exposes is wrapped, including beta ChatKit. The Assistants API
+(assistants/threads/runs) is deliberately not wrapped because the SDK marks it
+deprecated in favor of the Responses API. Async clients, raw-response accessors,
+and per-call `RequestOptions` are transport and accessor variants rather than
+endpoints, so they are intentionally not duplicated.
 
 ## Running tests
 
