@@ -17,13 +17,13 @@ built on the official Java SDK.
 deps.edn:
 
 ```clojure
-net.clojars.savya/openai-clj {:mvn/version "0.12.1"}
+net.clojars.savya/openai-clj {:mvn/version "0.12.2"}
 ```
 
 Leiningen:
 
 ```clojure
-[net.clojars.savya/openai-clj "0.12.1"]
+[net.clojars.savya/openai-clj "0.12.2"]
 ```
 
 Tracks [`com.openai/openai-java` 4.43.0](https://github.com/openai/openai-java/releases/tag/v4.43.0).
