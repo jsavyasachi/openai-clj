@@ -17,16 +17,16 @@ built on the official Java SDK.
 deps.edn:
 
 ```clojure
-net.clojars.savya/openai-clj {:mvn/version "0.12.2"}
+net.clojars.savya/openai-clj {:mvn/version "0.13.0"}
 ```
 
 Leiningen:
 
 ```clojure
-[net.clojars.savya/openai-clj "0.12.2"]
+[net.clojars.savya/openai-clj "0.13.0"]
 ```
 
-Tracks [`com.openai/openai-java` 4.43.0](https://github.com/openai/openai-java/releases/tag/v4.43.0).
+Tracks [`com.openai/openai-java` 4.45.0](https://github.com/openai/openai-java/releases/tag/v4.45.0).
 
 ## Providers
 
@@ -302,7 +302,7 @@ accept kebab-case request maps. Realtime WebSockets take a transport config map.
 batches, models, and stored Chat Completions. `openai.realtime` contains
 WebSocket, session, client-secret, transcription, translation, and SIP call
 helpers. `openai.graders` reflects the stable grader-model service, which
-exposes no operations in SDK 4.43.0.
+exposes no operations in SDK 4.45.0.
 
 Coverage is idiomatic parity: every non-deprecated operation the Java SDK
 exposes is wrapped, including beta ChatKit. The Assistants API

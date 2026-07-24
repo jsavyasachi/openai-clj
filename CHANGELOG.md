@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.0] - 2026-07-23
+### Added
+- Added organization and project spend-limit retrieve, update, and delete wrappers.
+- Added service-account API key creation for projects.
+
+### Changed
+- Upgraded `com.openai/openai-java` to 4.45.0.
+
 ## [0.12.2] - 2026-07-22
 ### Documentation
 - Restated coverage as idiomatic parity with the Java SDK: every non-deprecated operation is wrapped. Clarified that async clients, raw-response accessors, and per-call `RequestOptions` are non-endpoint variants, not coverage gaps.

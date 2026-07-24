@@ -12,7 +12,10 @@
            (com.openai.models.admin.organization.projects.groups ProjectGroup)
            (com.openai.models.admin.organization.projects.ratelimits ProjectRateLimit RateLimitUpdateRateLimitParams)
            (com.openai.models.admin.organization.projects.serviceaccounts ProjectServiceAccount ServiceAccountCreateParams)
+           (com.openai.models.admin.organization.projects.serviceaccounts.apikeys ApiKeyCreateResponse)
            (com.openai.models.admin.organization.projects.users.roles RoleListResponse)
+           (com.openai.models.admin.organization.projects.spendlimit ProjectSpendLimit ProjectSpendLimitDeleted ProjectSpendLimit$Currency ProjectSpendLimit$Interval ProjectSpendLimit$Enforcement ProjectSpendLimit$Enforcement$Status)
+           (com.openai.models.admin.organization.spendlimit OrganizationSpendLimit OrganizationSpendLimitDeleted OrganizationSpendLimit$Currency OrganizationSpendLimit$Interval OrganizationSpendLimit$Enforcement OrganizationSpendLimit$Enforcement$Status)
            (com.openai.models.admin.organization.spendalerts OrganizationSpendAlert OrganizationSpendAlert$Currency OrganizationSpendAlert$Interval OrganizationSpendAlert$NotificationChannel)
            (com.openai.models.admin.organization.usage UsageCompletionsParams UsageCompletionsResponse$Data UsageCompletionsResponse$Data$Result$OrganizationUsageCompletionsResult)))
 (set! *warn-on-reflection* true)
@@ -37,6 +40,60 @@
             :notification-channel {:recipients ["ops@example.com"] :type "email"}
             :threshold-amount 1000}
            (#'admin/spend-alert->map alert)))))
+
+(deftest converts-organization-spend-limit
+  (let [enforcement (-> (OrganizationSpendLimit$Enforcement/builder)
+                        (.status (OrganizationSpendLimit$Enforcement$Status/of "enforcing")) (.build))
+        limit (-> (OrganizationSpendLimit/builder) (.currency (OrganizationSpendLimit$Currency/of "usd"))
+                  (.enforcement enforcement) (.interval (OrganizationSpendLimit$Interval/of "month"))
+                  (.thresholdAmount 2500) (.build))
+        deleted (-> (OrganizationSpendLimitDeleted/builder) (.deleted true) (.build))
+        f (some-> (ns-resolve 'openai.admin 'spend-limit->map) deref)
+        deleted-f (some-> (ns-resolve 'openai.admin 'spend-limit-deleted->map) deref)]
+    (is (= {:currency :usd :enforcement :enforcing :interval :month :threshold-amount 2500}
+           (f limit)))
+    (is (= {:deleted true} (deleted-f deleted)))))
+
+(deftest builds-organization-spend-limit-update-params
+  (let [f (some-> (ns-resolve 'openai.admin '->spend-limit-update-params) deref)
+        ^com.openai.models.admin.organization.spendlimit.SpendLimitUpdateParams p (f {:currency :usd :interval :month :threshold-amount 2500})]
+    (is (= :usd (impl/->keyword (.currency p))))
+    (is (= :month (impl/->keyword (.interval p))))
+    (is (= 2500 (.thresholdAmount p)))))
+
+(deftest converts-project-spend-limit
+  (let [enforcement (-> (ProjectSpendLimit$Enforcement/builder)
+                        (.status (ProjectSpendLimit$Enforcement$Status/of "inactive")) (.build))
+        limit (-> (ProjectSpendLimit/builder) (.currency (ProjectSpendLimit$Currency/of "usd"))
+                  (.enforcement enforcement) (.interval (ProjectSpendLimit$Interval/of "month"))
+                  (.thresholdAmount 3500) (.build))
+        deleted (-> (ProjectSpendLimitDeleted/builder) (.deleted true) (.build))
+        f (some-> (ns-resolve 'openai.admin.projects 'spend-limit->map) deref)
+        deleted-f (some-> (ns-resolve 'openai.admin.projects 'spend-limit-deleted->map) deref)]
+    (is (= {:currency :usd :enforcement :inactive :interval :month :threshold-amount 3500} (f limit)))
+    (is (= {:deleted true} (deleted-f deleted)))))
+
+(deftest builds-project-spend-limit-update-params
+  (let [f (some-> (ns-resolve 'openai.admin.projects '->spend-limit-update-params) deref)
+        ^com.openai.models.admin.organization.projects.spendlimit.SpendLimitUpdateParams p (f "proj_1" {:currency :usd :interval :month :threshold-amount 3500})]
+    (is (= "proj_1" (impl/opt-get (.projectId p))))
+    (is (= :usd (impl/->keyword (.currency p))))
+    (is (= :month (impl/->keyword (.interval p))))
+    (is (= 3500 (.thresholdAmount p)))))
+
+(deftest builds-service-account-api-key-create-params
+  (let [f (some-> (ns-resolve 'openai.admin.projects '->service-account-api-key-create-params) deref)
+        ^com.openai.models.admin.organization.projects.serviceaccounts.apikeys.ApiKeyCreateParams p (f "proj_1" "svc_1" {:name "deploy" :scopes ["api.responses.write"]})]
+    (is (= "proj_1" (.projectId p)))
+    (is (= "svc_1" (impl/opt-get (.serviceAccountId p))))
+    (is (= "deploy" (impl/opt-get (.name p))))
+    (is (= ["api.responses.write"] (impl/opt-get (.scopes p))))))
+
+(deftest converts-service-account-api-key-create-response
+  (let [response (-> (ApiKeyCreateResponse/builder) (.id "key_1") (.createdAt 456)
+                     (.name "deploy") (.value "sk-secret") (.build))
+        f (some-> (ns-resolve 'openai.admin.projects 'service-account-api-key-create-response->map) deref)]
+    (is (= {:id "key_1" :created-at 456 :name "deploy" :value "sk-secret"} (f response)))))
 
 (deftest builds-usage-completions-params
   (let [^UsageCompletionsParams p (#'admin/->usage-completions-params

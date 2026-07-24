@@ -7,11 +7,13 @@
            (com.openai.models.admin.organization.projects.certificates CertificateActivatePage CertificateActivateParams CertificateActivateResponse CertificateActivateResponse$CertificateDetails CertificateDeactivatePage CertificateDeactivateParams CertificateDeactivateResponse CertificateDeactivateResponse$CertificateDetails CertificateListPage CertificateListParams CertificateListParams$Order CertificateListResponse CertificateListResponse$CertificateDetails)
            (com.openai.models.admin.organization.projects.dataretention DataRetentionRetrieveParams DataRetentionUpdateParams DataRetentionUpdateParams$RetentionType ProjectDataRetention)
            (com.openai.models.admin.organization.projects.groups GroupCreateParams GroupDeleteParams GroupDeleteResponse GroupListPage GroupListParams GroupListParams$Order GroupRetrieveParams GroupRetrieveParams$GroupType ProjectGroup)
+           (com.openai.models.admin.organization.projects.serviceaccounts.apikeys ApiKeyCreateParams ApiKeyCreateResponse)
+           (com.openai.models.admin.organization.projects.spendlimit ProjectSpendLimit ProjectSpendLimitDeleted SpendLimitUpdateParams SpendLimitUpdateParams$Currency SpendLimitUpdateParams$Interval)
            (com.openai.models.admin.organization.roles Role)
            (com.openai.models.admin.organization.users OrganizationUser)
            (com.openai.services.blocking.admin OrganizationService)
            (com.openai.services.blocking.admin.organization ProjectService)
-           (com.openai.services.blocking.admin.organization.projects ApiKeyService CertificateService DataRetentionService GroupService)
+           (com.openai.services.blocking.admin.organization.projects ApiKeyService CertificateService DataRetentionService GroupService SpendLimitService)
            (com.openai.services.blocking.admin.organization.projects.groups RoleService)))
 
 (set! *warn-on-reflection* true)
@@ -501,6 +503,36 @@
 (defn service-account-update [^OpenAIClient client ^String project-id ^String id {:keys [name role]}] (impl/with-api-errors (let [b (com.openai.models.admin.organization.projects.serviceaccounts.ServiceAccountUpdateParams/builder) ^com.openai.services.blocking.admin.organization.projects.ServiceAccountService s (.serviceAccounts (projects-service client))] (.projectId b project-id) (.serviceAccountId b id) (when name (.name b ^String name)) (when role (.role b (com.openai.models.admin.organization.projects.serviceaccounts.ServiceAccountUpdateParams$Role/of (impl/enum-name role)))) (service-account->map (.update s (.build b))))))
 (defn service-account-list ([^OpenAIClient client ^String project-id] (service-account-list client project-id {})) ([^OpenAIClient client ^String project-id opts] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.ServiceAccountService s (.serviceAccounts (projects-service client)) ^com.openai.models.admin.organization.projects.serviceaccounts.ServiceAccountListPage p (.list s (->service-account-list-params project-id opts))] (mapv service-account->map (impl/all-pages p))))))
 (defn service-account-delete [^OpenAIClient client ^String project-id ^String id] (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.ServiceAccountService s (.serviceAccounts (projects-service client)) ^com.openai.models.admin.organization.projects.serviceaccounts.ServiceAccountDeleteResponse r (.delete s (-> (com.openai.models.admin.organization.projects.serviceaccounts.ServiceAccountDeleteParams/builder) (.projectId project-id) (.serviceAccountId id) (.build)))] {:id (.id r) :deleted (.deleted r)})))
+
+(defn- ->service-account-api-key-create-params ^ApiKeyCreateParams [^String project-id ^String service-account-id {:keys [name scopes]}]
+  (when-not project-id (impl/missing-key! :project-id)) (when-not service-account-id (impl/missing-key! :service-account-id))
+  (let [b (ApiKeyCreateParams/builder)] (.projectId b project-id) (.serviceAccountId b service-account-id)
+    (when name (.name b ^String name)) (when scopes (.scopes b ^java.util.List scopes)) (.build b)))
+(defn- service-account-api-key-create-response->map [^ApiKeyCreateResponse a]
+  {:id (.id a) :created-at (.createdAt a) :name (.name a) :value (.value a)})
+(defn service-account-api-key-create [^OpenAIClient client ^String project-id ^String service-account-id opts]
+  (impl/with-api-errors (let [^com.openai.services.blocking.admin.organization.projects.serviceaccounts.ApiKeyService s (.apiKeys (.serviceAccounts (projects-service client)))]
+                          (service-account-api-key-create-response->map (.create s (->service-account-api-key-create-params project-id service-account-id opts))))))
+
+;; Spend limits
+
+(defn- ->spend-limit-update-params ^SpendLimitUpdateParams [^String project-id {:keys [currency interval threshold-amount]}]
+  (when-not project-id (impl/missing-key! :project-id)) (when-not currency (impl/missing-key! :currency))
+  (when-not interval (impl/missing-key! :interval)) (when-not (some? threshold-amount) (impl/missing-key! :threshold-amount))
+  (-> (SpendLimitUpdateParams/builder) (.projectId project-id)
+      (.currency (SpendLimitUpdateParams$Currency/of (impl/enum-name currency)))
+      (.interval (SpendLimitUpdateParams$Interval/of (impl/enum-name interval)))
+      (.thresholdAmount (long threshold-amount)) (.build)))
+(defn- spend-limit->map [^ProjectSpendLimit a]
+  {:currency (impl/->keyword (.currency a)) :enforcement (impl/->keyword (.status (.enforcement a)))
+   :interval (impl/->keyword (.interval a)) :threshold-amount (.thresholdAmount a)})
+(defn- spend-limit-deleted->map [^ProjectSpendLimitDeleted a] {:deleted (.deleted a)})
+(defn spend-limit-retrieve [^OpenAIClient client ^String project-id]
+  (impl/with-api-errors (let [^SpendLimitService s (.spendLimit (projects-service client))] (spend-limit->map (.retrieve s project-id)))))
+(defn spend-limit-update [^OpenAIClient client ^String project-id opts]
+  (impl/with-api-errors (let [^SpendLimitService s (.spendLimit (projects-service client))] (spend-limit->map (.update s project-id (->spend-limit-update-params project-id opts))))))
+(defn spend-limit-delete [^OpenAIClient client ^String project-id]
+  (impl/with-api-errors (let [^SpendLimitService s (.spendLimit (projects-service client))] (spend-limit-deleted->map (.delete s project-id)))))
 
 ;; Spend alerts
 

@@ -10,11 +10,12 @@
            (com.openai.models.admin.organization.groups Group GroupCreateParams GroupDeleteResponse GroupListPage GroupListParams GroupListParams$Order GroupUpdateParams GroupUpdateResponse)
            (com.openai.models.admin.organization.invites Invite Invite$Project InviteCreateParams InviteCreateParams$Project InviteCreateParams$Project$Role InviteCreateParams$Role InviteDeleteResponse InviteListPage InviteListParams)
            (com.openai.models.admin.organization.projects Project ProjectCreateParams ProjectListPage ProjectListParams ProjectUpdateParams)
+           (com.openai.models.admin.organization.spendlimit OrganizationSpendLimit OrganizationSpendLimitDeleted SpendLimitUpdateParams SpendLimitUpdateParams$Currency SpendLimitUpdateParams$Interval)
            (com.openai.models.admin.organization.spendalerts OrganizationSpendAlert OrganizationSpendAlertDeleted OrganizationSpendAlert$NotificationChannel SpendAlertCreateParams SpendAlertCreateParams$Currency SpendAlertCreateParams$Interval SpendAlertCreateParams$NotificationChannel SpendAlertListPage SpendAlertListParams SpendAlertListParams$Order SpendAlertUpdateParams SpendAlertUpdateParams$Currency SpendAlertUpdateParams$Interval SpendAlertUpdateParams$NotificationChannel)
            (com.openai.models.admin.organization.roles Role RoleCreateParams RoleDeleteResponse RoleListPage RoleListParams RoleListParams$Order RoleUpdateParams)
            (com.openai.models.admin.organization.users OrganizationUser UserDeleteResponse UserListPage UserListParams UserUpdateParams)
            (com.openai.services.blocking.admin OrganizationService)
-           (com.openai.services.blocking.admin.organization AdminApiKeyService AuditLogService CertificateService DataRetentionService GroupService InviteService ProjectService RoleService SpendAlertService UsageService UserService)))
+           (com.openai.services.blocking.admin.organization AdminApiKeyService AuditLogService CertificateService DataRetentionService GroupService InviteService ProjectService RoleService SpendAlertService SpendLimitService UsageService UserService)))
 (set! *warn-on-reflection* true)
 
 (defn- ->project-create-params ^ProjectCreateParams [{:keys [name]}]
@@ -302,6 +303,26 @@
   ([^OpenAIClient client opts] (impl/with-api-errors (let [^SpendAlertService s (.spendAlerts (organization client)) ^SpendAlertListPage p (.list s (->spend-alert-list-params opts))] (mapv spend-alert->map (impl/all-pages p))))))
 (defn spend-alert-delete [^OpenAIClient client ^String alert-id]
   (impl/with-api-errors (let [^SpendAlertService s (.spendAlerts (organization client)) ^OrganizationSpendAlertDeleted r (.delete s alert-id)] {:id (.id r) :deleted (.deleted r)})))
+
+;; Spend limits
+
+(defn- ->spend-limit-update-params ^SpendLimitUpdateParams [{:keys [currency interval threshold-amount]}]
+  (when-not currency (impl/missing-key! :currency)) (when-not interval (impl/missing-key! :interval))
+  (when-not (some? threshold-amount) (impl/missing-key! :threshold-amount))
+  (-> (SpendLimitUpdateParams/builder)
+      (.currency (SpendLimitUpdateParams$Currency/of (impl/enum-name currency)))
+      (.interval (SpendLimitUpdateParams$Interval/of (impl/enum-name interval)))
+      (.thresholdAmount (long threshold-amount)) (.build)))
+(defn- spend-limit->map [^OrganizationSpendLimit a]
+  {:currency (impl/->keyword (.currency a)) :enforcement (impl/->keyword (.status (.enforcement a)))
+   :interval (impl/->keyword (.interval a)) :threshold-amount (.thresholdAmount a)})
+(defn- spend-limit-deleted->map [^OrganizationSpendLimitDeleted a] {:deleted (.deleted a)})
+(defn spend-limit-retrieve [^OpenAIClient client]
+  (impl/with-api-errors (let [^SpendLimitService s (.spendLimit (organization client))] (spend-limit->map (.retrieve s)))))
+(defn spend-limit-update [^OpenAIClient client opts]
+  (impl/with-api-errors (let [^SpendLimitService s (.spendLimit (organization client))] (spend-limit->map (.update s (->spend-limit-update-params opts))))))
+(defn spend-limit-delete [^OpenAIClient client]
+  (impl/with-api-errors (let [^SpendLimitService s (.spendLimit (organization client))] (spend-limit-deleted->map (.delete s)))))
 (defn- ->user-update-params ^UserUpdateParams [^String id {:keys [developer-persona role role-id technical-level]}]
   (let [b (UserUpdateParams/builder)] (.userId b id)
     (when developer-persona (.developerPersona b ^String developer-persona))

@@ -1,7 +1,7 @@
 {:paths ["src" "resources"]
 
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}
-        com.openai/openai-java {:mvn/version "4.43.0"}
+        com.openai/openai-java {:mvn/version "4.45.0"}
         metosin/jsonista {:mvn/version "1.0.0"}}
 
  :aliases
