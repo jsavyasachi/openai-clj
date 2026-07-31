@@ -17,16 +17,16 @@ built on the official Java SDK.
 deps.edn:
 
 ```clojure
-net.clojars.savya/openai-clj {:mvn/version "0.13.0"}
+net.clojars.savya/openai-clj {:mvn/version "0.14.0"}
 ```
 
 Leiningen:
 
 ```clojure
-[net.clojars.savya/openai-clj "0.13.0"]
+[net.clojars.savya/openai-clj "0.14.0"]
 ```
 
-Tracks [`com.openai/openai-java` 4.45.0](https://github.com/openai/openai-java/releases/tag/v4.45.0).
+Tracks [`com.openai/openai-java` 4.48.0](https://github.com/openai/openai-java/releases/tag/v4.48.0).
 
 ## Providers
 
@@ -260,6 +260,7 @@ accept kebab-case request maps. Realtime WebSockets take a transport config map.
 ```clojure
 (require '[openai.images :as images]
          '[openai.audio :as audio]
+         '[openai.content-provenance-checks :as cpc]
          '[openai.moderations :as moderations]
          '[openai.completions :as completions]
          '[openai.vector-stores :as vector-stores]
@@ -279,6 +280,7 @@ accept kebab-case request maps. Realtime WebSockets take a transport config map.
 (images/generate client {:model "gpt-image-1" :prompt "A Clojure logo"})
 (audio/create-speech client {:model "gpt-4o-mini-tts" :voice :alloy
                              :input "Hello"})
+(cpc/create client {:file "image.png"})
 (moderations/create client {:input "text"})
 (completions/create client {:model "gpt-3.5-turbo-instruct" :prompt "Once"})
 (vector-stores/create client {:name "docs" :file-ids ["file_..."]})
@@ -301,8 +303,9 @@ accept kebab-case request maps. Realtime WebSockets take a transport config map.
 `openai.core` also contains Responses, Chat Completions, embeddings, files,
 batches, models, and stored Chat Completions. `openai.realtime` contains
 WebSocket, session, client-secret, transcription, translation, and SIP call
-helpers. `openai.graders` reflects the stable grader-model service, which
-exposes no operations in SDK 4.45.0.
+helpers. `openai.content-provenance-checks` contains Content Provenance Checks.
+`openai.graders` reflects the stable grader-model service, which
+exposes no operations in SDK 4.48.0.
 
 Coverage is idiomatic parity: every non-deprecated operation the Java SDK
 exposes is wrapped, including beta ChatKit. The Assistants API

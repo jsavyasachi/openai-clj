@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.14.0] - 2026-07-31
+### Added
+- Added the Content Provenance Checks API via `openai.content-provenance-checks/create`.
+- Added transcription multi-language support via `:languages`.
+
+### Changed
+- Upgraded `com.openai/openai-java` to 4.48.0.
+- The `:fast` service tier is now accepted.
+
 ## [0.13.0] - 2026-07-23
 ### Added
 - Added organization and project spend-limit retrieve, update, and delete wrappers.
