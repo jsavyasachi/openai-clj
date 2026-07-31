@@ -2,6 +2,7 @@
   "Idiomatic Clojure wrapper over the OpenAI Content Provenance Checks API."
   (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)
+           (com.openai.core MultipartField MultipartField$Builder)
            (com.openai.models.contentprovenancechecks ContentProvenanceCheck
                                                        ContentProvenanceCheckCreateParams
                                                        ContentProvenanceCheckCreateParams$Builder)
@@ -21,15 +22,16 @@
     :else (throw (ex-info (str "Unsupported content provenance file type " (class input))
                           {:openai/error :unsupported-file-type :class (class input)}))))
 
+(defn- ->file-field ^MultipartField [input]
+  (let [^MultipartField$Builder b (MultipartField/builder)]
+    (.value b (->input-stream input))
+    (.build b)))
+
 (defn- ->create-params ^ContentProvenanceCheckCreateParams [{:keys [file]}]
   (when-not file (impl/missing-key! :file))
   (let [^ContentProvenanceCheckCreateParams$Builder b
         (ContentProvenanceCheckCreateParams/builder)]
-    (cond
-      (instance? Path file) (.file b ^Path file)
-      (string? file) (.file b (.toPath ^File (File. ^String file)))
-      (bytes? file) (.file b ^bytes file)
-      :else (.file b ^InputStream (->input-stream file)))
+    (.file b (->file-field file))
     (.build b)))
 
 (defn- response->map [^ContentProvenanceCheck response]
