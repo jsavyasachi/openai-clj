@@ -65,6 +65,14 @@
            (mapv #(.asString ^TranscriptionCreateParams$TimestampGranularity %)
                  (opt (.timestampGranularities p)))))))
 
+(deftest translates-transcription-languages
+  (let [p (transcription-params {:file (.getBytes "audio" "UTF-8")
+                                 :model "whisper-1"
+                                 :language "fr"
+                                 :languages ["fr" "en"]})]
+    (is (= "fr" (opt (.language p))))
+    (is (= ["fr" "en"] (opt (.languages p))))))
+
 (deftest converts-transcription-response-unions
   (let [plain (-> (Transcription/builder) (.text "plain") (.build))
         verbose (-> (TranscriptionVerbose/builder)

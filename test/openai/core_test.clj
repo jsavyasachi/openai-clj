@@ -228,6 +228,14 @@
     (is (= "bar" (.asStringOrThrow (get props "foo"))))
     (is (= "quux" (.asStringOrThrow (get props "baz"))))))
 
+(deftest translates-fast-service-tier
+  (let [response-params (params {:model "gpt-5.2" :input "hi" :service-tier :fast})
+        chat-params (chat-params {:model "gpt-4o-mini"
+                                   :messages [{:role :user :content "hi"}]
+                                   :service-tier :fast})]
+    (is (= "fast" (.asString (opt (.serviceTier response-params)))))
+    (is (= "fast" (.asString (opt (.serviceTier chat-params)))))))
+
 (deftest rejects-missing-required-keys
   (testing "missing model"
     (is (= {:openai/error :missing-key :key :model}

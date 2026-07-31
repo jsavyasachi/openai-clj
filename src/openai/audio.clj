@@ -113,7 +113,7 @@
                           {:openai/error :unsupported-chunking-strategy :value x}))))
 
 (defn- ->transcription-params ^TranscriptionCreateParams
-  [{:keys [file filename model language prompt response-format temperature
+  [{:keys [file filename model language languages prompt response-format temperature
            timestamp-granularities include chunking-strategy]}]
   (when-not file (impl/missing-key! :file))
   (when-not model (impl/missing-key! :model))
@@ -121,6 +121,7 @@
     (set-transcription-file! b file filename)
     (.model b ^String model)
     (when language (.language b ^String language))
+    (when languages (.languages b ^java.util.List (vec languages)))
     (when prompt (.prompt b ^String prompt))
     (when response-format (.responseFormat b (AudioResponseFormat/of (impl/enum-name response-format))))
     (when temperature (.temperature b (double temperature)))
