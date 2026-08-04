@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.1] - 2026-08-03
+### Fixed
+- Reading a stored function-call-output item no longer leaks the Java union
+  wrapper into `:output`. A string output previously came back as
+  `"Output{string=sunny}"` instead of `"sunny"`, which broke feeding the item
+  straight back into a follow-up request. Content-list outputs are now returned
+  as structured data instead of a stringified wrapper.
+
 ## [0.15.0] - 2026-08-03
 ### Added
 - Added optional `:name` and `:namespace` support for function-call-output
