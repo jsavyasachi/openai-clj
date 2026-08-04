@@ -29,6 +29,8 @@
   :previous-response-id (:id first-response)
   :input [{:type :function-call-output
            :call-id (:call-id call)
+           :name (:name call)
+           :namespace (:namespace call)
            :output {:temperature_f 72 :conditions "sunny"}}]})
 ```
 
@@ -67,4 +69,3 @@
 
 Tool choice accepts `:auto`, `:required`, `:none`, or
 `{:type :function :name "get_weather"}`.
-

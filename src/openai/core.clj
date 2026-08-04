@@ -322,12 +322,15 @@
 (defn- ->role ^EasyInputMessage$Role [role]
   (EasyInputMessage$Role/of (name role)))
 
-(defn- ->function-call-output ^ResponseInputItem [{:keys [call-id output]}]
+(defn- ->function-call-output ^ResponseInputItem
+  [{:keys [call-id output name namespace]}]
   (let [^ResponseInputItem$FunctionCallOutput$Builder b
         (ResponseInputItem$FunctionCallOutput/builder)]
     (when-not call-id (impl/missing-key! :call-id))
     (.callId b ^String call-id)
     (.output b ^String (impl/encode-output output))
+    (when name (.name b ^String name))
+    (when namespace (.namespace b ^String namespace))
     (ResponseInputItem/ofFunctionCallOutput (.build b))))
 
 (defn- ->computer-call-output ^ResponseInputItem
@@ -965,11 +968,13 @@
     (.isResponseOutputMessage item) (message->map (.asResponseOutputMessage item))
     (.isFunctionCall item) (function-call->map (.toResponseFunctionToolCall (.asFunctionCall item)))
     (.isFunctionCallOutput item) (let [c (.asFunctionCallOutput item)]
-                                   {:type :function-call-output
-                                    :id (.id c)
-                                    :call-id (.callId c)
-                                    :status (impl/->keyword (.asString (.status c)))
-                                    :output (str (.output c))})
+                                   (cond-> {:type :function-call-output
+                                            :id (.id c)
+                                            :call-id (.callId c)
+                                            :status (impl/->keyword (.asString (.status c)))
+                                            :output (str (.output c))}
+                                     (.isPresent (.name c)) (assoc :name (.get (.name c)))
+                                     (.isPresent (.namespace c)) (assoc :namespace (.get (.namespace c)))))
     :else {:type :unknown}))
 
 (defn- usage->map [^ResponseUsage u]
@@ -1035,7 +1040,8 @@
 
   Message-vector input items accept `{:role :system|:developer|:user|:assistant
   :content \"...\"}`, multimodal content vectors containing text, image, or file
-  part maps, and `{:type :function-call-output :call-id \"...\" :output \"...\"}`.
+  part maps, and `{:type :function-call-output :call-id \"...\" :name \"...\"
+  :namespace \"...\" :output \"...\"}`. `:name` and `:namespace` are optional.
   Map outputs are JSON-encoded.
 
   Structured outputs: `:json-schema {:name \"...\" :schema {...} :strict true

@@ -1,6 +1,7 @@
 (ns openai.core-test
   (:require [clojure.test :refer [deftest is testing]]
-            [openai.core :as openai])
+            [openai.core :as openai]
+            [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)
            (com.openai.models ResponseFormatJsonSchema
                               ResponseFormatJsonSchema$JsonSchema
@@ -37,12 +38,15 @@
                                         ResponseErrorEvent
                                         ResponseFailedEvent
                                         ResponseFunctionToolCall
+                                        ResponseFunctionToolCallOutputItem
+                                        ResponseFunctionToolCallOutputItem$Status
                                         ResponseFunctionCallArgumentsDeltaEvent
                                         ResponseFunctionCallArgumentsDoneEvent
                                         ResponseIncompleteEvent
                                         ResponseInProgressEvent
                                         ResponseInputContent
                                         ResponseInputItem
+                                        ResponseItem
                                         ResponseOutputItemAddedEvent
                                         ResponseOutputItemDoneEvent
                                         ResponseOutputItem
@@ -91,6 +95,9 @@
 
 (defn- response->map [r]
   (#'openai/response->map r))
+
+(defn- response-item->map [item]
+  (#'openai/response-item->map item))
 
 (defn- event->map [e]
   (#'openai/event->map e))
@@ -514,6 +521,28 @@
     (is (.isEasyInputMessage item))))
 
 (deftest translates-function-call-output-input
+  (testing "optional name and namespace"
+    (let [fco (.asFunctionCallOutput
+               (first (.asResponse
+                       (opt (.input
+                             (params {:model "gpt-5.2"
+                                      :input [{:type :function-call-output
+                                               :call-id "call_123"
+                                               :name "get_weather"
+                                               :namespace "weather"
+                                               :output "sunny"}]}))))))]
+      (is (= "get_weather" (opt (.name fco))))
+      (is (= "weather" (opt (.namespace fco))))))
+  (testing "unset optional fields are omitted from the wire shape"
+    (let [fco (.asFunctionCallOutput
+               (first (.asResponse
+                       (opt (.input
+                             (params {:model "gpt-5.2"
+                                      :input [{:type :function-call-output
+                                               :call-id "call_123"
+                                               :output "sunny"}]}))))))]
+      (is (not (contains? (impl/sdk-object->clj fco) :name)))
+      (is (not (contains? (impl/sdk-object->clj fco) :namespace)))))
   (testing "string output"
     (let [p (params {:model "gpt-5.2"
                      :input [{:type :function-call-output
@@ -531,6 +560,31 @@
                               :output {:forecast "sunny"}}]})
           fco (.asFunctionCallOutput (first (.asResponse (opt (.input p)))))]
       (is (= "{\"forecast\":\"sunny\"}" (.asString (.output fco)))))))
+
+(deftest maps-function-call-output-input-item
+  (testing "optional name and namespace are read when present"
+    (let [item (ResponseItem/ofFunctionCallOutput
+                (-> (ResponseFunctionToolCallOutputItem/builder)
+                    (.id "item_123")
+                    (.callId "call_123")
+                    (.output "sunny")
+                    (.name "get_weather")
+                    (.namespace "weather")
+                    (.status (ResponseFunctionToolCallOutputItem$Status/of "completed"))
+                    (.build)))]
+      (is (= {:name "get_weather" :namespace "weather"}
+             (select-keys (response-item->map item) [:name :namespace])))))
+  (testing "unset optional fields are omitted"
+    (let [item (ResponseItem/ofFunctionCallOutput
+                (-> (ResponseFunctionToolCallOutputItem/builder)
+                    (.id "item_123")
+                    (.callId "call_123")
+                    (.output "sunny")
+                    (.status (ResponseFunctionToolCallOutputItem$Status/of "completed"))
+                    (.build)))
+          m (response-item->map item)]
+      (is (not (contains? m :name)))
+      (is (not (contains? m :namespace))))))
 
 (deftest translates-agent-tool-output-inputs
   (let [p (params {:model "gpt-5.2"
@@ -795,6 +849,20 @@
                               (.reason Response$IncompleteDetails$Reason/MAX_OUTPUT_TOKENS)
                               (.build)))
       (.build)))
+
+(deftest maps-function-call-output-response-item
+  (let [item (ResponseOutputItem/ofFunctionCallOutput
+              (-> (ResponseFunctionToolCallOutputItem/builder)
+                  (.id "item_123")
+                  (.callId "call_123")
+                  (.output "sunny")
+                  (.status (ResponseFunctionToolCallOutputItem$Status/of "completed"))
+                  (.name "get_weather")
+                  (.namespace "weather")
+                  (.build)))
+        m (-> (response->map (response [item])) :output first)]
+    (is (= {:name "get_weather" :namespace "weather"}
+           (select-keys m [:name :namespace])))))
 
 (deftest maps-response-to-clojure
   (let [m (response->map (response [(message-item)

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.15.0] - 2026-08-03
+### Added
+- Added optional `:name` and `:namespace` support for function-call-output
+  request and response maps.
+
+### Changed
+- Upgraded `com.openai/openai-java` to 4.50.0.
+- `gpt-5.5` is usable through the existing model string passthrough and needed
+  no library change.
+
 ## [0.14.0] - 2026-07-31
 ### Added
 - Added the Content Provenance Checks API via `openai.content-provenance-checks/create`.
