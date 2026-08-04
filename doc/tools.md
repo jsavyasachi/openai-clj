@@ -29,9 +29,19 @@
   :previous-response-id (:id first-response)
   :input [{:type :function-call-output
            :call-id (:call-id call)
-           :name (:name call)
-           :namespace (:namespace call)
            :output {:temperature_f 72 :conditions "sunny"}}]})
+```
+
+`:name` and `:namespace` are optional on a function-call-output. Supply them
+when you want to label the output, for example when routing tools from more
+than one source:
+
+```clojure
+{:type :function-call-output
+ :call-id (:call-id call)
+ :name (:name call)
+ :namespace "weather"
+ :output {:temperature_f 72 :conditions "sunny"}}
 ```
 
 ### Built-In Tools
