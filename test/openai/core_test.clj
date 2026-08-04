@@ -39,7 +39,10 @@
                                         ResponseFailedEvent
                                         ResponseFunctionToolCall
                                         ResponseFunctionToolCallOutputItem
+                                        ResponseFunctionToolCallOutputItem$Output
+                                        ResponseFunctionToolCallOutputItem$Output$FunctionAndCustomToolCallOutput
                                         ResponseFunctionToolCallOutputItem$Status
+                                        ResponseInputText
                                         ResponseFunctionCallArgumentsDeltaEvent
                                         ResponseFunctionCallArgumentsDoneEvent
                                         ResponseIncompleteEvent
@@ -584,7 +587,44 @@
                     (.build)))
           m (response-item->map item)]
       (is (not (contains? m :name)))
-      (is (not (contains? m :namespace))))))
+      (is (not (contains? m :namespace)))))
+  (testing "string output is unwrapped, not stringified through the union"
+    (let [item (ResponseItem/ofFunctionCallOutput
+                (-> (ResponseFunctionToolCallOutputItem/builder)
+                    (.id "item_123")
+                    (.callId "call_123")
+                    (.output "sunny")
+                    (.status (ResponseFunctionToolCallOutputItem$Status/of "completed"))
+                    (.build)))]
+      (is (= "sunny" (:output (response-item->map item))))))
+  (testing "string output round-trips back into a request unchanged"
+    (let [item (ResponseItem/ofFunctionCallOutput
+                (-> (ResponseFunctionToolCallOutputItem/builder)
+                    (.id "item_123")
+                    (.callId "call_123")
+                    (.output "sunny")
+                    (.status (ResponseFunctionToolCallOutputItem$Status/of "completed"))
+                    (.build)))
+          read-back (response-item->map item)
+          fco (.asFunctionCallOutput
+               (first (.asResponse
+                       (opt (.input (params {:model "gpt-5.2"
+                                             :input [(select-keys read-back
+                                                                  [:type :call-id :output])]}))))))]
+      (is (= "sunny" (.asString (.output fco))))))
+  (testing "content-list output is structured, not stringified through the union"
+    (let [part (ResponseFunctionToolCallOutputItem$Output$FunctionAndCustomToolCallOutput/ofInputText
+                (-> (ResponseInputText/builder) (.text "sunny") (.build)))
+          item (ResponseItem/ofFunctionCallOutput
+                (-> (ResponseFunctionToolCallOutputItem/builder)
+                    (.id "item_123")
+                    (.callId "call_123")
+                    (.output (ResponseFunctionToolCallOutputItem$Output/ofContentList [part]))
+                    (.status (ResponseFunctionToolCallOutputItem$Status/of "completed"))
+                    (.build)))
+          out (:output (response-item->map item))]
+      (is (not (string? out)))
+      (is (= "sunny" (-> out first :text))))))
 
 (deftest translates-agent-tool-output-inputs
   (let [p (params {:model "gpt-5.2"

@@ -962,6 +962,16 @@
            :id (.id m)}
     (.isPresent (.status m)) (assoc :status (impl/->keyword (.asString ^com.openai.models.responses.ResponseInputMessageItem$Status (.get (.status m)))))))
 
+(defn- function-call-output->clj
+  "A stored function-call-output carries a union: either a plain string or a
+  list of content parts. Unwrap the string case so the value round-trips back
+  into a request; convert the content-list case rather than leaking the union's
+  toString."
+  [^com.openai.models.responses.ResponseFunctionToolCallOutputItem$Output o]
+  (if (.isString o)
+    (.asString o)
+    (impl/sdk-object->clj o)))
+
 (defn- response-item->map [^ResponseItem item]
   (cond
     (.isResponseInputMessageItem item) (input-message-item->map (.asResponseInputMessageItem item))
@@ -972,7 +982,7 @@
                                             :id (.id c)
                                             :call-id (.callId c)
                                             :status (impl/->keyword (.asString (.status c)))
-                                            :output (str (.output c))}
+                                            :output (function-call-output->clj (.output c))}
                                      (.isPresent (.name c)) (assoc :name (.get (.name c)))
                                      (.isPresent (.namespace c)) (assoc :namespace (.get (.namespace c)))))
     :else {:type :unknown}))
