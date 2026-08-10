@@ -8,5 +8,5 @@
 - `openai.moderations`: content moderation.
 - `openai.completions`: legacy text completions.
 
-Every list helper returns a realized vector across all pages. Binary inputs
-accept paths, byte arrays, and input streams where supported by the SDK.
+Each list helper returns a realized vector from all pages. Binary inputs accept
+paths, byte arrays, and input streams where the SDK supports them.

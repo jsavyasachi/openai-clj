@@ -1,7 +1,7 @@
 # Vector Stores
 
 `openai.vector-stores` covers store CRUD/search, files, file content, and file
-batches. List operations automatically traverse every SDK page.
+batches. List operations go through each SDK page.
 
 ```clojure
 (vector-stores/create client {:name "manuals" :file-ids ["file_..."]})

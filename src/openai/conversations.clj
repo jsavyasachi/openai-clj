@@ -1,5 +1,5 @@
 (ns openai.conversations
-  "Idiomatic Clojure wrapper over the OpenAI Conversations API."
+  "Clojure wrapper for the OpenAI Conversations API."
   (:refer-clojure :exclude [list update])
   (:require [openai.core :as core] [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)

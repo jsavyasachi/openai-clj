@@ -1,5 +1,5 @@
 (ns openai.impl
-  "Shared implementation helpers for OpenAI SDK wrapper namespaces."
+  "Shared helpers for OpenAI SDK wrapper namespaces."
   (:require [clojure.string :as str]
             [clojure.walk :as walk]
             [jsonista.core :as json])
@@ -30,9 +30,8 @@
     :api-error))
 
 (defn throw-normalized!
-  "Rethrow an SDK exception: service errors and I/O errors become ex-info
-  keyed `:openai/error` with the original as cause; anything else propagates
-  unchanged."
+  "Rethrow an SDK exception. Service and I/O errors become ex-info keyed
+  `:openai/error` with the original as the cause. Other errors propagate unchanged."
   [^Throwable e]
   (cond
     (instance? OpenAIServiceException e)
@@ -156,8 +155,8 @@
         (vec (concat value-errors object-errors array-errors))))))
 
 (defn validate-json-schema
-  "Return JSON Schema conformance errors for parsed Clojure data. Supports the
-  structural keywords emitted by Responses strict schemas."
+  "Return JSON Schema conformance errors for parsed Clojure data. Supports
+  structural keywords from Responses strict schemas."
   [schema data]
   (validate-schema* schema data []))
 
@@ -192,6 +191,6 @@
    (json/read-value (json/write-value-as-string value) json-mapper)))
 
 (defn all-pages
-  "Realize every element across all pages of an SDK *ListPage via its autoPager."
+  "Realize each element from all pages of an SDK *ListPage with its autoPager."
   [page]
   (vec (AutoPager. ^Page page nil)))

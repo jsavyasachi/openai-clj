@@ -1,5 +1,5 @@
 (ns openai.chatkit
-  "Idiomatic Clojure wrapper over the beta ChatKit API."
+  "Clojure wrapper for the beta ChatKit API."
   (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)
            (com.openai.core JsonValue)

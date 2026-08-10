@@ -1,5 +1,5 @@
 (ns openai.uploads
-  "Idiomatic Clojure wrapper over the OpenAI Uploads API."
+  "Clojure wrapper for the OpenAI Uploads API."
   (:refer-clojure :exclude [complete])
   (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)

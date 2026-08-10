@@ -4,8 +4,8 @@
 [![cljdoc](https://cljdoc.org/badge/net.clojars.savya/openai-clj)](https://cljdoc.org/d/net.clojars.savya/openai-clj/CURRENT)
 [![test](https://github.com/jsavyasachi/openai-clj/actions/workflows/test.yml/badge.svg)](https://github.com/jsavyasachi/openai-clj/actions/workflows/test.yml)
 
-Idiomatic Clojure client for the OpenAI API and any OpenAI-compatible provider,
-built on the official Java SDK.
+Clojure client for the OpenAI API and OpenAI-compatible providers. It uses the
+official Java SDK.
 
 ## Stack
 
@@ -30,9 +30,8 @@ Tracks [`com.openai/openai-java` 4.50.0](https://github.com/openai/openai-java/r
 
 ## Providers
 
-Every function takes a client, and the client's `:base-url` points it at any
-endpoint that speaks the OpenAI wire protocol. The same code works across
-OpenAI-compatible providers:
+Every function takes a client. The client `:base-url` points to an endpoint
+that uses the OpenAI wire protocol. The same code works with these providers:
 
 | Provider | `:base-url` |
 |---|---|
@@ -56,10 +55,10 @@ OpenAI-compatible providers:
   :messages [{:role :user :content "Hello"}]})
 ```
 
-Use Chat Completions (`create-chat-completion`) for the broadest reach: the
-Responses API is OpenAI-specific and most compatible providers do not implement
-it. Only routes a provider actually serves will work; provider-specific
-extensions outside the OpenAI protocol are not covered.
+Use Chat Completions (`create-chat-completion`) with the most providers. The
+Responses API is OpenAI-specific. Most compatible providers do not implement it.
+Only routes that a provider serves work. The library does not cover
+provider-specific extensions outside the OpenAI protocol.
 
 ## Documentation
 
@@ -172,9 +171,8 @@ Responses tools cover `:function`, `:web-search`, `:file-search`,
 `:tool-search-output`, and `:mcp-approval-response` items.
 
 Response maps preserve all SDK output-item variants as kebab-case Clojure maps.
-`openai/stream` normalizes every Responses streaming event and calls its
-callback with the resulting `:type`-keyed map; `openai/stream-text` is the
-text-delta convenience wrapper.
+`openai/stream` normalizes each Responses stream event. It calls its callback
+with the resulting `:type`-keyed map. `openai/stream-text` wraps text deltas.
 
 ## Realtime API
 
@@ -202,9 +200,9 @@ SIP `accept-call`, `hangup-call`, `refer-call`, and `reject-call` operations.
 
 ## Chat Completions
 
-Prefer the Responses API for new OpenAI work. Chat Completions is exposed as
-the compatibility path for OpenAI-compatible endpoints that do not support
-Responses, including local LLMs and hosted compat providers.
+Use the Responses API for new OpenAI work. Chat Completions supports
+OpenAI-compatible endpoints that do not support Responses. This includes local
+LLMs and hosted compatible providers.
 
 ```clojure
 (openai/create-chat-completion
@@ -240,7 +238,7 @@ Function tools use the same JSON-schema-shaped `:parameters` maps as Responses:
   :tool-choice {:type :function :name "get_weather"}})
 ```
 
-Streaming returns the concatenated content and calls the callback for each
+Streaming returns the concatenated content. It calls the callback for each
 normalized chunk:
 
 ```clojure
@@ -254,7 +252,7 @@ normalized chunk:
 
 ## API namespaces
 
-Service functions take an `openai.core/client` as their first argument and
+Service functions take an `openai.core/client` as the first argument. They
 accept kebab-case request maps. Realtime WebSockets take a transport config map.
 
 ```clojure
@@ -304,15 +302,14 @@ accept kebab-case request maps. Realtime WebSockets take a transport config map.
 batches, models, and stored Chat Completions. `openai.realtime` contains
 WebSocket, session, client-secret, transcription, translation, and SIP call
 helpers. `openai.content-provenance-checks` contains Content Provenance Checks.
-`openai.graders` reflects the stable grader-model service, which
-exposes no operations in SDK 4.50.0.
+`openai.graders` maps to the stable grader-model service. The service exposes
+no operations in SDK 4.50.0.
 
-Coverage is idiomatic parity: every non-deprecated operation the Java SDK
-exposes is wrapped, including beta ChatKit. The Assistants API
-(assistants/threads/runs) is deliberately not wrapped because the SDK marks it
-deprecated in favor of the Responses API. Async clients, raw-response accessors,
-and per-call `RequestOptions` are transport and accessor variants rather than
-endpoints, so they are intentionally not duplicated.
+The library wraps each non-deprecated operation that the Java SDK exposes. This
+includes beta ChatKit. The Assistants API (assistants/threads/runs) is not
+wrapped because the SDK marks it as deprecated in favor of the Responses API.
+Async clients, raw-response accessors, and per-call `RequestOptions` are
+transport and accessor variants, not endpoints. The library does not duplicate them.
 
 ## Running tests
 
@@ -320,8 +317,8 @@ endpoints, so they are intentionally not duplicated.
 clojure -M:test
 ```
 
-Unit tests are no-network; `^:integration` tests, if added later, should be
-skipped without `OPENAI_API_KEY`.
+Unit tests do not use a network. Skip `^:integration` tests, if added, without
+`OPENAI_API_KEY`.
 
 ## License
 

@@ -290,8 +290,8 @@
 (set! *warn-on-reflection* true)
 
 (defn client
-  "An OpenAI client. With no args, resolves credentials from the environment
-  (`OPENAI_API_KEY`). Pass explicit config keys to set client options:
+  "An OpenAI client. With no args, it reads credentials from the environment
+  (`OPENAI_API_KEY`). Use explicit config keys to set client options:
   `:api-key`, `:organization`, `:project`, `:base-url`, `:timeout-ms`,
   `:max-retries`, and `:azure-service-version` (an Azure OpenAI api-version
   string, used together with an Azure `:base-url`)."
@@ -599,8 +599,8 @@
     (.build b)))
 
 (defn- filter->plain
-  "A filter map as plain JSON-shaped data, for nesting a compound filter
-  inside another compound filter (the SDK models only one level natively)."
+  "A filter map as plain JSON-shaped data. Use it to nest a compound filter
+  inside another compound filter. The SDK models only one level natively."
   [{:keys [type key value filters]}]
   (if filters
     {"type" (name type) "filters" (mapv filter->plain filters)}
@@ -963,10 +963,9 @@
     (.isPresent (.status m)) (assoc :status (impl/->keyword (.asString ^com.openai.models.responses.ResponseInputMessageItem$Status (.get (.status m)))))))
 
 (defn- function-call-output->clj
-  "A stored function-call-output carries a union: either a plain string or a
-  list of content parts. Unwrap the string case so the value round-trips back
-  into a request; convert the content-list case rather than leaking the union's
-  toString."
+  "A stored function-call-output carries a union: a plain string or a list of
+  content parts. Unwrap the string so the value round-trips into a request.
+  Convert the content list instead of exposing the union `toString`."
   [^com.openai.models.responses.ResponseFunctionToolCallOutputItem$Output o]
   (if (.isString o)
     (.asString o)
@@ -1074,9 +1073,9 @@
     (response->map (.create (.responses client) (->params req)))))
 
 (defn count-input-tokens
-  "Count input tokens for a Responses request shape. Accepts the same request map
-  style as `create-response`; fields unsupported by the SDK's input token count
-  endpoint are ignored. Returns `{:input-tokens n}`."
+  "Count input tokens for a Responses request shape. It accepts the same request
+  map as `create-response`. It ignores fields the SDK input token count endpoint
+  does not support. Returns `{:input-tokens n}`."
   [^OpenAIClient client req]
   (impl/with-api-errors
     (let [^ResponseService svc (.responses client)
@@ -1125,8 +1124,8 @@
       (embedding-response->map (.create svc (->embedding-params req))))))
 
 (defn list-models
-  "List available models as a vector of `{:id :created :owned-by}` maps. Pages
-  are followed automatically."
+  "List available models as a vector of `{:id :created :owned-by}` maps. It
+  follows each page automatically."
   [^OpenAIClient client]
   (impl/with-api-errors
     (let [^ModelService svc (.models client)
@@ -1236,10 +1235,9 @@
     (str sb)))
 
 (defn stream
-  "Stream a Responses API request, invoking `on-event` with a normalized event
-  map for every server-sent event as it arrives, and returning the concatenated
-  output text. Takes the same `req` map as `create-response`. The underlying
-  HTTP stream is closed automatically."
+  "Stream a Responses API request. It calls `on-event` with a normalized map for
+  each server-sent event. It returns concatenated output text. It takes the same
+  `req` map as `create-response`. It closes the HTTP stream automatically."
   ^String [^OpenAIClient client req on-event]
   (impl/with-api-errors
     (let [^ResponseService svc (.responses client)]
@@ -1247,8 +1245,8 @@
         (drain-stream sr on-event)))))
 
 (defn retrieve-streaming
-  "Resume streaming an existing background response id. Invokes `on-event` with
-  normalized event maps and returns concatenated output text, matching `stream`."
+  "Resume the stream for an existing background response id. It calls `on-event`
+  with normalized event maps. It returns concatenated output text, as `stream` does."
   ^String [^OpenAIClient client ^String response-id on-event]
   (impl/with-api-errors
     (let [^ResponseService svc (.responses client)]
@@ -1256,8 +1254,8 @@
         (drain-stream sr on-event)))))
 
 (defn stream-text
-  "Stream a Responses API request, calling `on-text` with each output text delta
-  string as it arrives, and returning the full concatenated text."
+  "Stream a Responses API request. It calls `on-text` with each output text delta.
+  It returns the full concatenated text."
   ^String [^OpenAIClient client req on-text]
   (stream client req
           (fn [m] (when (and on-text (= :output-text-delta (:type m))) (on-text (:delta m))))))
@@ -1657,7 +1655,7 @@
       (chat-completion->map (.update svc (->chat-completion-update-params completion-id opts))))))
 
 (defn list-chat-completions
-  "List stored chat completions, following all pages automatically."
+  "List stored chat completions. It follows each page automatically."
   ([^OpenAIClient client]
    (list-chat-completions client {}))
   ([^OpenAIClient client opts]
@@ -1676,7 +1674,7 @@
       (deleted-chat-completion->map (.delete svc completion-id)))))
 
 (defn list-chat-completion-messages
-  "List messages from a stored chat completion, following all pages automatically."
+  "List messages from a stored chat completion. It follows each page automatically."
   ([^OpenAIClient client ^String completion-id]
    (list-chat-completion-messages client completion-id {}))
   ([^OpenAIClient client ^String completion-id opts]
@@ -1688,10 +1686,9 @@
        (mapv stored-chat-message->map (impl/all-pages p))))))
 
 (defn stream-chat-completion
-  "Stream a Chat Completions API request, invoking `on-event` with a normalized
-  chunk map as it arrives, and returning the concatenated content deltas. Takes
-  the same `req` map as `create-chat-completion`. The underlying HTTP stream is
-  closed automatically."
+  "Stream a Chat Completions API request. It calls `on-event` with a normalized
+  chunk map. It returns concatenated content deltas. It takes the same `req` map
+  as `create-chat-completion`. It closes the HTTP stream automatically."
   ^String [^OpenAIClient client req on-event]
   (impl/with-api-errors
     (let [^ChatService chat (.chat client)
@@ -1700,8 +1697,8 @@
         (drain-chat-stream sr on-event)))))
 
 (defn stream-chat-completion-text
-  "Stream a Chat Completions API request, calling `on-text` with each content
-  delta string as it arrives, and returning the full concatenated text."
+  "Stream a Chat Completions API request. It calls `on-text` with each content
+  delta. It returns the full concatenated text."
   ^String [^OpenAIClient client req on-text]
   (stream-chat-completion
    client req
@@ -1718,8 +1715,8 @@
       (response->map (.retrieve svc response-id)))))
 
 (defn list-input-items
-  "List input items for a stored response id as normalized maps. Pages are
-  followed automatically."
+  "List input items for a stored response id as normalized maps. It follows each
+  page automatically."
   [^OpenAIClient client ^String response-id]
   (impl/with-api-errors
     (let [^ResponseService svc (.responses client)
@@ -1736,7 +1733,7 @@
     nil))
 
 (defn cancel-response
-  "Cancel an in-progress response by id and return the resulting response map."
+  "Cancel an in-progress response by id and return the response map."
   [^OpenAIClient client ^String response-id]
   (impl/with-api-errors
     (let [^ResponseService svc (.responses client)]
@@ -1844,8 +1841,8 @@
         (.readAllBytes (.body r))))))
 
 (defn list-files
-  "List files as a vector of file maps. Optional keys: `:purpose`, `:order`
-  (`:asc`/`:desc`), `:after`, and `:limit`. Pages are followed automatically."
+  "List files as a vector of file maps. Optional keys are `:purpose`, `:order`
+  (`:asc`/`:desc`), `:after`, and `:limit`. It follows each page automatically."
   ([^OpenAIClient client] (list-files client {}))
   ([^OpenAIClient client opts]
    (impl/with-api-errors
@@ -1938,15 +1935,15 @@
       (batch->map (.retrieve svc batch-id)))))
 
 (defn cancel-batch
-  "Cancel an in-progress batch by id and return the resulting batch map."
+  "Cancel an in-progress batch by id and return the batch map."
   [^OpenAIClient client ^String batch-id]
   (impl/with-api-errors
     (let [^BatchService svc (.batches client)]
       (batch->map (.cancel svc batch-id)))))
 
 (defn list-batches
-  "List batches as a vector of batch maps. Optional keys: `:after` and
-  `:limit`. Pages are followed automatically."
+  "List batches as a vector of batch maps. Optional keys are `:after` and
+  `:limit`. It follows each page automatically."
   ([^OpenAIClient client] (list-batches client {}))
   ([^OpenAIClient client opts]
    (impl/with-api-errors

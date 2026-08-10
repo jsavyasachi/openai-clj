@@ -1,5 +1,5 @@
 (ns openai.images
-  "Idiomatic Clojure wrapper over the OpenAI Images API."
+  "Clojure wrapper for the OpenAI Images API."
   (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)
            (com.openai.core MultipartField MultipartField$Builder)

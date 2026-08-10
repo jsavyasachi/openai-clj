@@ -1,5 +1,5 @@
 (ns openai.completions
-  "Idiomatic Clojure wrapper over the legacy OpenAI Completions API."
+  "Clojure wrapper for the legacy OpenAI Completions API."
   (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)
            (com.openai.core.http StreamResponse)

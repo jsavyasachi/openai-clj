@@ -1,5 +1,5 @@
 (ns openai.vector-stores
-  "Idiomatic Clojure wrapper over the OpenAI Vector Stores API."
+  "Clojure wrapper for the OpenAI Vector Stores API."
   (:refer-clojure :exclude [list update])
   (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)

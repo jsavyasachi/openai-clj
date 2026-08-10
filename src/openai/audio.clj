@@ -1,5 +1,5 @@
 (ns openai.audio
-  "Idiomatic Clojure wrapper over the OpenAI Audio API."
+  "Clojure wrapper for the OpenAI Audio API."
   (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)
            (com.openai.core MultipartField MultipartField$Builder)
@@ -226,7 +226,7 @@
       (transcription-response->map (.create svc (->transcription-params req))))))
 
 (defn create-transcription-streaming
-  "Stream a transcription, call `on-event`, and return concatenated text deltas."
+  "Stream a transcription. Call `on-event` and return concatenated text deltas."
   ^String [^OpenAIClient client req on-event]
   (impl/with-api-errors
     (let [^AudioService audio (.audio client)

@@ -1,5 +1,5 @@
 (ns openai.videos
-  "Idiomatic Clojure wrapper over the OpenAI Videos API."
+  "Clojure wrapper for the OpenAI Videos API."
   (:refer-clojure :exclude [list extend])
   (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)

@@ -1,5 +1,5 @@
 (ns openai.content-provenance-checks
-  "Idiomatic Clojure wrapper over the OpenAI Content Provenance Checks API."
+  "Clojure wrapper for the OpenAI Content Provenance Checks API."
   (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)
            (com.openai.core MultipartField MultipartField$Builder)

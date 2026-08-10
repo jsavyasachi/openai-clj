@@ -32,9 +32,8 @@
            :output {:temperature_f 72 :conditions "sunny"}}]})
 ```
 
-`:name` and `:namespace` are optional on a function-call-output. Supply them
-when you want to label the output, for example when routing tools from more
-than one source:
+`:name` and `:namespace` are optional on a function-call-output. Use them to
+label the output, for example when you route tools from more than one source:
 
 ```clojure
 {:type :function-call-output

@@ -1,5 +1,5 @@
 (ns openai.fine-tuning
-  "Idiomatic Clojure wrapper over the OpenAI Fine-tuning API."
+  "Clojure wrapper for the OpenAI Fine-tuning API."
   (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)
            (com.openai.core JsonValue)

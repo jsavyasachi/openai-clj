@@ -1,5 +1,5 @@
 (ns openai.containers
-  "Idiomatic Clojure wrapper over the OpenAI Containers API."
+  "Clojure wrapper for the OpenAI Containers API."
   (:refer-clojure :exclude [list])
   (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)

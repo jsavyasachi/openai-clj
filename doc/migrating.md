@@ -1,7 +1,7 @@
 # Migrating From wkok/openai-clojure
 
 [wkok/openai-clojure](https://github.com/wkok/openai-clojure) wraps the Chat
-Completions API over hand-rolled HTTP; openai-clj wraps the official
+Completions API with hand-rolled HTTP. openai-clj wraps the official
 `com.openai/openai-java` SDK and the Responses API. The structural differences:
 
 - **Explicit client.** wkok reads `OPENAI_API_KEY` ambiently and takes
@@ -15,7 +15,7 @@ Completions API over hand-rolled HTTP; openai-clj wraps the official
 - **Flat function tools.** wkok nests `{:type "function" :function {:name ...}}`;
   openai-clj flattens to `{:type :function :name ... :parameters ...}`, and tool
   call results go back as `:function-call-output` input items.
-- **Streaming is a function, not a flag.** wkok's `:stream true` + `:on-next`
+- **Streaming uses a function, not a flag.** wkok's `:stream true` + `:on-next`
   becomes `(openai/stream client params callback)` or `stream-text` for text
   deltas only.
 - **Errors are `ex-info`.** All failures carry `:openai/error` in `ex-data`
@@ -35,8 +35,6 @@ Completions API over hand-rolled HTTP; openai-clj wraps the official
 | `(api/create-batch {...})` / `retrieve-batch` / `cancel-batch` | `create-batch` / `get-batch` / `cancel-batch`, client-first |
 | Azure: `{:impl :azure}` + env vars | `(openai/client {:base-url "https://<resource>.openai.azure.com" :azure-service-version "..."})` |
 
-Not covered here: images, audio, moderations (as a standalone API),
-assistants/threads/runs, and vector-store management are out of openai-clj's
-scope - keep wkok/openai-clojure for those surfaces or drop to the Java SDK
-directly.
-
+This document does not cover images, audio, moderations as a standalone API,
+assistants/threads/runs, or vector-store management. Keep wkok/openai-clojure
+for those APIs or use the Java SDK directly.

@@ -1,7 +1,7 @@
 # Evals
 
 `openai.evals` covers eval definitions, runs, and run output items. Custom,
-logs, and stored-completions data-source configurations accept Clojure maps.
+logs, and stored-completions data source configurations accept Clojure maps.
 
 ```clojure
 (evals/create client {:name "quality"

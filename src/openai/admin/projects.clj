@@ -61,7 +61,7 @@
       (project-api-key->map (.retrieve svc (->api-key-retrieve-params project-id key-id))))))
 
 (defn api-key-list
-  "Lists project API keys. Opts accepts :after, :limit, and :owner-project-access
+  "List project API keys. Opts accepts :after, :limit, and :owner-project-access
   (:active, :inactive, or :any)."
   ([^OpenAIClient client ^String project-id] (api-key-list client project-id {}))
   ([^OpenAIClient client ^String project-id opts]

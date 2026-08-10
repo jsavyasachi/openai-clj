@@ -1,8 +1,8 @@
 (ns openai.realtime
   "Realtime WebSocket sessions and REST helpers.
 
-  The WebSocket codec is pure. connect adds a thin OkHttp transport and
-  exposes both callbacks and a blocking queue through take! and poll!."
+  The WebSocket codec is pure. `connect` adds an OkHttp transport. It provides
+  callbacks and a blocking queue through `take!` and `poll!`."
   (:require [clojure.string :as str]
             [clojure.walk :as walk]
             [jsonista.core :as json]
@@ -238,8 +238,8 @@
 (defn create-translation-session
   "Create a short-lived Realtime Translation client secret.
 
-  Takes transport config because openai-java 4.42.0 has translation models
-  but does not expose the translation REST service."
+  Take transport config because openai-java 4.42.0 has translation models but
+  does not expose the translation REST service."
   [{:keys [api-key base-url okhttp-client]} req]
   (when-not api-key (impl/missing-key! :api-key))
   (let [owned? (nil? okhttp-client)
@@ -380,7 +380,7 @@
   (.send ^WebSocket @(:socket connection) (encode-client-event event)))
 
 (defn take!
-  "Block until the next normalized server event is available."
+  "Block until the next normalized server event is ready."
   [^RealtimeConnection connection]
   (.take ^LinkedBlockingQueue (:queue connection)))
 

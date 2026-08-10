@@ -1,5 +1,5 @@
 (ns openai.admin
-  "Organization-level OpenAI Admin API wrappers."
+  "OpenAI Admin API wrappers for an organization."
   (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)
            (com.openai.core JsonValue)

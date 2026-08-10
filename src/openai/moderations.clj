@@ -1,5 +1,5 @@
 (ns openai.moderations
-  "Idiomatic Clojure wrapper over the OpenAI Moderations API."
+  "Clojure wrapper for the OpenAI Moderations API."
   (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)
            (com.openai.core JsonValue)

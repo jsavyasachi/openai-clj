@@ -1,5 +1,5 @@
 (ns openai.evals
-  "Idiomatic Clojure wrapper over the OpenAI Evals API."
+  "Clojure wrapper for the OpenAI Evals API."
   (:refer-clojure :exclude [list update])
   (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)

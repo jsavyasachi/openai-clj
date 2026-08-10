@@ -1,5 +1,5 @@
 (ns openai.skills
-  "Idiomatic Clojure wrapper over the OpenAI Skills API."
+  "Clojure wrapper for the OpenAI Skills API."
   (:refer-clojure :exclude [list update])
   (:require [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)
