@@ -47,7 +47,7 @@ Requirements for a change that can merge:
 - Follow [Conventional Commits](https://www.conventionalcommits.org/)
   (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:` …).
 - Keep the subject in the imperative mood and under ~72 characters.
-- Update `CHANGES.md` when your change is user-visible.
+- Update `CHANGELOG.md` when your change is user-visible.
 - Rebase on the current `main` before you open the pull request.
 
 ## License
