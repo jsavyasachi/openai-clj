@@ -30,8 +30,8 @@
 
 (defn- video->map [^Video v]
   (cond-> {:id (.id v) :status (impl/->keyword (.asString (.status v)))
-           :model (.asString (.model v)) :progress (.progress v) :created-at (.createdAt v)
-           :size (.asString (.size v)) :seconds (.asString (.seconds v))}
+           :model (impl/->keyword (.asString (.model v))) :progress (.progress v) :created-at (.createdAt v)
+           :size (impl/->keyword (.asString (.size v))) :seconds (impl/->keyword (.asString (.seconds v)))}
     (.isPresent (.completedAt v)) (assoc :completed-at (impl/opt-get (.completedAt v)))
     (.isPresent (.expiresAt v)) (assoc :expires-at (impl/opt-get (.expiresAt v)))
     (.isPresent (.error v)) (assoc :error (video-error->map (impl/opt-get (.error v))))

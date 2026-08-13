@@ -271,7 +271,10 @@
                                          WebSearchTool$UserLocation
                                          WebSearchTool$UserLocation$Builder
                                          WebSearchTool$Type)
-           (com.openai.models.responses.inputitems InputItemListPage)
+           (com.openai.models.responses.inputitems InputItemListPage
+                                                   InputItemListParams
+                                                   InputItemListParams$Builder
+                                                   InputItemListParams$Order)
            (com.openai.models.responses.inputtokens InputTokenCountParams
                                                       InputTokenCountParams$Builder
                                                       InputTokenCountParams$Truncation
@@ -1714,15 +1717,29 @@
     (let [^ResponseService svc (.responses client)]
       (response->map (.retrieve svc response-id)))))
 
+(defn- ->input-item-list-params ^InputItemListParams
+  [^String response-id {:keys [after include limit order]}]
+  (let [^InputItemListParams$Builder b (InputItemListParams/builder)]
+    (.responseId b response-id)
+    (when after (.after b ^String after))
+    (doseq [i include]
+      (.addInclude b (ResponseIncludable/of (impl/enum-name i))))
+    (when limit (.limit b (long limit)))
+    (when order (.order b (InputItemListParams$Order/of (impl/enum-name order))))
+    (.build b)))
+
 (defn list-input-items
   "List input items for a stored response id as normalized maps. It follows each
-  page automatically."
-  [^OpenAIClient client ^String response-id]
-  (impl/with-api-errors
-    (let [^ResponseService svc (.responses client)
-          ^InputItemService items (.inputItems svc)
-          ^InputItemListPage p (.list items response-id)]
-      (mapv response-item->map (impl/all-pages p)))))
+  page automatically. Optional keys are `:after`, `:include`, `:limit`, and
+  `:order`."
+  ([^OpenAIClient client ^String response-id]
+   (list-input-items client response-id {}))
+  ([^OpenAIClient client ^String response-id opts]
+   (impl/with-api-errors
+     (let [^ResponseService svc (.responses client)
+           ^InputItemService items (.inputItems svc)
+           ^InputItemListPage p (.list items (->input-item-list-params response-id opts))]
+       (mapv response-item->map (impl/all-pages p))))))
 
 (defn delete-response
   "Delete one stored response by id. The OpenAI Java SDK returns void."
