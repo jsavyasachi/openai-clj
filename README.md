@@ -26,6 +26,8 @@ Leiningen:
 [net.clojars.savya/openai-clj "0.15.2"]
 ```
 
+Supported Clojure versions: 1.10, 1.11, and 1.12.
+
 Tracks [`com.openai/openai-java` 4.50.0](https://github.com/openai/openai-java/releases/tag/v4.50.0).
 
 ## Providers
