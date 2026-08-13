@@ -31,6 +31,7 @@
            (com.openai.models.models Model)
            (com.openai.models.responses ResponseCreateParams
                                         ResponseCreateParams$ToolChoice
+                                        ResponseIncludable
                                         Response$IncompleteDetails
                                         Response$IncompleteDetails$Reason
                                         ResponseCompletedEvent
@@ -91,7 +92,9 @@
                                         ResponseUsage
                                         ResponseUsage$InputTokensDetails
                                         ResponseUsage$OutputTokensDetails
-                                        ToolChoiceOptions)))
+                                        ToolChoiceOptions)
+           (com.openai.models.responses.inputitems InputItemListParams
+                                                   InputItemListParams$Order)))
 
 (defn- params ^ResponseCreateParams [m]
   (#'openai/->params m))
@@ -132,6 +135,10 @@
 (defn- chat-completion-message-list-params [id opts]
   (#'openai/->chat-completion-message-list-params id opts))
 
+(defn- input-item-list-params [id opts]
+  (when-let [f (ns-resolve 'openai.core '->input-item-list-params)]
+    (f id opts)))
+
 (defn- stored-chat-message->map [x]
   (#'openai/stored-chat-message->map x))
 
@@ -161,6 +168,26 @@
                           :max-retries 1})]
     (is (instance? OpenAIClient c))
     (.close ^OpenAIClient c)))
+
+(deftest translates-input-item-list-options
+  (let [p (input-item-list-params
+           "resp_123"
+           {:after "item_10"
+            :include [:message.output-text.logprobs]
+            :limit 20
+            :order :desc})]
+    (is (instance? InputItemListParams p))
+    (when p
+      (is (= "resp_123" (opt (.responseId p))))
+      (is (= "item_10" (opt (.after p))))
+      (is (= ["message.output_text.logprobs"]
+             (mapv #(.asString ^ResponseIncludable %)
+                   (opt (.include p)))))
+      (is (= 20 (opt (.limit p))))
+      (is (= "desc" (.asString ^InputItemListParams$Order (opt (.order p))))))))
+
+(deftest list-input-items-accepts-options
+  (is (= 2 (count (:arglists (meta #'openai/list-input-items))))))
 
 (deftest translates-string-input
   (let [p (params {:model "gpt-5.2" :input "plain string"})]

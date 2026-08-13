@@ -39,14 +39,14 @@
                              (.completedAt absent) (.error absent)
                              (.expiresAt absent) (.prompt absent)
                              (.remixedFromVideoId absent))]
-    (is (= {:id "video_1" :status :queued :model "sora-2" :progress 25
-            :created-at 10 :size "1280x720" :seconds "8"}
+    (is (= {:id "video_1" :status :queued :model :sora-2 :progress 25
+            :created-at 10 :size :1280x720 :seconds :8}
            (#'videos/video->map (.build base))))
     (let [full (#'videos/video->map
                 (.build (doto base (.completedAt 20) (.expiresAt 30) (.prompt "A sunrise")
                           (.error error))))]
-      (is (= {:id "video_1" :status :queued :model "sora-2" :progress 25
-              :created-at 10 :size "1280x720" :seconds "8"
+      (is (= {:id "video_1" :status :queued :model :sora-2 :progress 25
+              :created-at 10 :size :1280x720 :seconds :8
               :completed-at 20 :expires-at 30 :prompt "A sunrise"}
              (dissoc full :error)))
       (is (= {:code "render_failed" :message "Could not render"}
