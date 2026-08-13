@@ -136,8 +136,7 @@
   (#'openai/->chat-completion-message-list-params id opts))
 
 (defn- input-item-list-params [id opts]
-  (when-let [f (ns-resolve 'openai.core '->input-item-list-params)]
-    (f id opts)))
+  (#'openai/->input-item-list-params id opts))
 
 (defn- stored-chat-message->map [x]
   (#'openai/stored-chat-message->map x))
@@ -177,17 +176,20 @@
             :limit 20
             :order :desc})]
     (is (instance? InputItemListParams p))
-    (when p
-      (is (= "resp_123" (opt (.responseId p))))
-      (is (= "item_10" (opt (.after p))))
-      (is (= ["message.output_text.logprobs"]
-             (mapv #(.asString ^ResponseIncludable %)
-                   (opt (.include p)))))
-      (is (= 20 (opt (.limit p))))
-      (is (= "desc" (.asString ^InputItemListParams$Order (opt (.order p))))))))
+    (is (= "resp_123" (opt (.responseId p))))
+    (is (= "item_10" (opt (.after p))))
+    (is (= ["message.output_text.logprobs"]
+           (mapv #(.asString ^ResponseIncludable %)
+                 (opt (.include p)))))
+    (is (= 20 (opt (.limit p))))
+    (is (= "desc" (.asString ^InputItemListParams$Order (opt (.order p)))))))
 
-(deftest list-input-items-accepts-options
-  (is (= 2 (count (:arglists (meta #'openai/list-input-items))))))
+(deftest input-item-list-params-defaults-to-the-response-id-alone
+  (let [p (input-item-list-params "resp_123" {})]
+    (is (= "resp_123" (opt (.responseId p))))
+    (is (not (.isPresent (.after p))))
+    (is (not (.isPresent (.limit p))))
+    (is (not (.isPresent (.order p))))))
 
 (deftest translates-string-input
   (let [p (params {:model "gpt-5.2" :input "plain string"})]
