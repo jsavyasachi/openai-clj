@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.15.2] - 2026-08-13
+
+### Changed
+- Docstrings and prose documentation rewritten in Simplified Technical English.
+  No behavior change.
+
 ## [0.15.1] - 2026-08-03
 ### Fixed
 - Reading a stored function-call-output item no longer leaks the Java union
