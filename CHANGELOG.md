@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.16.0] - 2026-08-13
+
+### Fixed
+- `list-input-items` now accepts an options map, so `:after`, `:include`,
+  `:limit`, and `:order` reach the API. The one-argument form is unchanged.
+
+### Changed
+- Video maps return `:model`, `:size`, and `:seconds` as keywords. Each is an
+  enum in the SDK, and image maps already return the equivalent fields as
+  keywords. Code that compares these three fields against a string must compare
+  against a keyword instead.
+
+### Added
+- The test matrix covers Clojure 1.10, 1.11, and 1.12.
+
 ## [0.15.2] - 2026-08-13
 
 ### Changed
