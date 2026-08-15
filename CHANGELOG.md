@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.17.0] - 2026-08-14
 
 ### Changed
 - Upgraded `com.openai/openai-java` to 4.51.0.
