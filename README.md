@@ -272,6 +272,7 @@ accept kebab-case request maps. Realtime WebSockets take a transport config map.
          '[openai.skills :as skills]
          '[openai.videos :as videos]
          '[openai.chatkit :as chatkit]
+         '[openai.beta.responses :as beta-responses]
          '[openai.realtime :as realtime]
          '[openai.webhooks :as webhooks]
          '[openai.admin :as admin]
@@ -295,6 +296,7 @@ accept kebab-case request maps. Realtime WebSockets take a transport config map.
 (videos/create client {:model "sora-2" :prompt "Ocean sunrise"
                        :size "1280x720" :seconds "8"})
 (chatkit/create-session client {:workflow {:id "wf_123"} :user "user_42"})
+(beta-responses/create-response client {:model "gpt-5" :input "Hello"})
 (webhooks/unwrap webhook-client raw-body request-headers)
 (admin/project-list admin-client {:limit 20})
 (admin-projects/service-account-list admin-client "proj_...")
@@ -308,7 +310,7 @@ helpers. `openai.content-provenance-checks` contains Content Provenance Checks.
 no operations in SDK 4.51.0.
 
 The library wraps each non-deprecated operation that the Java SDK exposes. This
-includes beta ChatKit. The Assistants API (assistants/threads/runs) is not
+includes beta ChatKit and beta Responses. The Assistants API (assistants/threads/runs) is not
 wrapped because the SDK marks it as deprecated in favor of the Responses API.
 Async clients, raw-response accessors, and per-call `RequestOptions` are
 transport and accessor variants, not endpoints. The library does not duplicate them.

@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Added `openai.beta.responses` with create, create-streaming, retrieve,
+  retrieve-streaming, cancel, delete, compact, input-item listing, and input
+  token count operations.
+
 ## [0.17.0] - 2026-08-14
 
 ### Changed
