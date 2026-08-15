@@ -119,6 +119,42 @@
 (defn- input-token-count-params [m]
   (#'openai/->input-token-count-params m))
 
+(deftest accepts-all-stable-response-input-item-variants
+  (doseq [[type item? item]
+          [[:additional-tools #(.isAdditionalTools %) {:type :additional-tools :tools []}]
+           [:apply-patch-call #(.isApplyPatchCall %) {:type :apply-patch-call :call-id "c" :operation {:type :update-file :path "p" :diff "d"} :status :completed}]
+           [:apply-patch-call-output #(.isApplyPatchCallOutput %) {:type :apply-patch-call-output :call-id "c" :status :completed :output "ok"}]
+           [:code-interpreter-call #(.isCodeInterpreterCall %) {:type :code-interpreter-call :id "c" :code "x" :container-id "ct" :status :completed :outputs []}]
+           [:compaction #(.isCompaction %) {:type :compaction :id "c"}]
+           [:compaction-trigger #(.isCompactionTrigger %) {:type :compaction-trigger}]
+           [:computer-call #(.isComputerCall %) {:type :computer-call :id "c" :call-id "cc" :pending-safety-checks [] :status :completed}]
+           [:computer-call-output #(.isComputerCallOutput %) {:type :computer-call-output :call-id "cc" :output {:image-url "data:image/png;base64,x"}}]
+           [:custom-tool-call #(.isCustomToolCall %) {:type :custom-tool-call :id "c" :call-id "cc" :name "n" :input "x"}]
+           [:custom-tool-call-output #(.isCustomToolCallOutput %) {:type :custom-tool-call-output :call-id "cc" :output "x"}]
+           [:easy-input-message #(.isEasyInputMessage %) {:type :easy-input-message :role :user :content "x"}]
+           [:file-search-call #(.isFileSearchCall %) {:type :file-search-call :id "f" :queries ["q"] :status :completed :results []}]
+           [:function-call #(.isFunctionCall %) {:type :function-call :id "f" :call-id "c" :name "n" :arguments "{}"}]
+           [:function-call-output #(.isFunctionCallOutput %) {:type :function-call-output :call-id "c" :output "x"}]
+           [:image-generation-call #(.isImageGenerationCall %) {:type :image-generation-call :id "i" :status :completed :result "x"}]
+           [:item-reference #(.isItemReference %) {:type :item-reference :id "i"}]
+           [:local-shell-call #(.isLocalShellCall %) {:type :local-shell-call :id "l" :call-id "c" :action {:type :exec :command ["pwd"] :env {}} :status :completed}]
+           [:local-shell-call-output #(.isLocalShellCallOutput %) {:type :local-shell-call-output :id "l" :output "x" :status :completed}]
+           [:mcp-approval-request #(.isMcpApprovalRequest %) {:type :mcp-approval-request :id "a" :arguments "{}" :name "n" :server-label "s"}]
+           [:mcp-approval-response #(.isMcpApprovalResponse %) {:type :mcp-approval-response :approval-request-id "a" :approve true}]
+           [:mcp-call #(.isMcpCall %) {:type :mcp-call :id "m" :arguments "{}" :name "n" :server-label "s" :status :completed}]
+           [:mcp-list-tools #(.isMcpListTools %) {:type :mcp-list-tools :id "m" :server-label "s" :tools []}]
+           [:message #(.isMessage %) {:type :message :role :user :content [{:type :text :text "x"}]}]
+           [:program #(.isProgram %) {:type :program :id "p" :call-id "c" :code "x" :fingerprint "f"}]
+           [:program-output #(.isProgramOutput %) {:type :program-output :id "p" :call-id "c" :result "x" :status :completed}]
+           [:reasoning #(.isReasoning %) {:type :reasoning :id "r" :summary []}]
+           [:response-output-message #(.isResponseOutputMessage %) {:type :response-output-message :id "m" :role :assistant :status :completed :content [{:type :output-text :text "x" :annotations []}]}]
+           [:shell-call #(.isShellCall %) {:type :shell-call :id "s" :call-id "c" :action :exec :environment :local :status :completed}]
+           [:shell-call-output #(.isShellCallOutput %) {:type :shell-call-output :id "s" :call-id "c" :output [{:stdout "x" :stderr "" :exit-code 0}] :status :completed}]
+           [:tool-search-call #(.isToolSearchCall %) {:type :tool-search-call :id "t" :call-id "c" :arguments {} :execution :client :status :completed}]
+           [:tool-search-output #(.isToolSearchOutput %) {:type :tool-search-output :id "t" :call-id "c" :tools [] :execution :client :status :completed}]
+           [:web-search-call #(.isWebSearchCall %) {:type :web-search-call :id "w" :action {:type :search :query "q" :queries ["q"] :sources []} :status :completed}]]]
+    (is (item? (openai/response-input-item item)) (str type))))
+
 (defn- chat-params ^ChatCompletionCreateParams [m]
   (#'openai/->chat-params m))
 
@@ -659,6 +695,7 @@
                     (.status (ResponseFunctionToolCallOutputItem$Status/of "completed"))
                     (.build)))]
       (is (= "sunny" (:output (response-item->map item))))))
+
   (testing "string output round-trips back into a request unchanged"
     (let [item (ResponseItem/ofFunctionCallOutput
                 (-> (ResponseFunctionToolCallOutputItem/builder)
@@ -823,6 +860,20 @@
        (.name "get_weather")
        (.arguments args)
        (.build))))
+
+(deftest round-trips-output-function-call-as-input
+  (let [m (output-item->map (function-call-item "{\"city\":\"Denver\"}"))
+        rebuilt (openai/response-input-item m)]
+    (is (.isFunctionCall rebuilt))
+    (is (= "call_123" (.callId (.asFunctionCall rebuilt))))
+    (is (= "{\"city\":\"Denver\"}"
+           (.arguments (.asFunctionCall rebuilt))))))
+
+(deftest round-trips-output-message-as-input
+  (let [m (output-item->map (message-item))
+        rebuilt (openai/response-input-item m)]
+    (is (.isResponseOutputMessage rebuilt))
+    (is (= "msg_1" (.id (.asResponseOutputMessage rebuilt))))))
 
 (defn- unknown-item []
   (ResponseOutputItem/ofImageGenerationCall
@@ -995,7 +1046,8 @@
                                     (mcp-call-item)
                                     (custom-tool-call-item)
                                     (local-shell-call-item)
-                                    (computer-call-item)]))]
+                                    (computer-call-item)]))
+        rebuilt (mapv openai/response-input-item (:output m))]
     (is (= "resp_123" (:id m)))
     (is (= "gpt-5.2" (:model m)))
     (is (= :completed (:status m)))
@@ -1046,7 +1098,15 @@
              :status :completed
              :call-id "call_comp"
              :pending-safety-checks []}]
-           (:output m)))))
+           (:output m)))
+    (is (.isResponseOutputMessage (nth rebuilt 0)))
+    (is (.isFunctionCall (nth rebuilt 1)))
+    (is (.isImageGenerationCall (nth rebuilt 2)))
+    (is (.isReasoning (nth rebuilt 3)))
+    (is (.isMcpCall (nth rebuilt 4)))
+    (is (.isCustomToolCall (nth rebuilt 5)))
+    (is (.isLocalShellCall (nth rebuilt 6)))
+    (is (.isComputerCall (nth rebuilt 7)))))
 
 (deftest maps-response-prompt-fields
   (let [prompt (-> (com.openai.models.responses.ResponsePrompt/builder)
@@ -1140,7 +1200,8 @@
                          (.tools [(com.openai.models.responses.Tool/ofCustom custom-tool)])
                          (.build)))
         output (:output (response->map (response [web file code mcp-tools shell patch tool-output])))
-        by-type (into {} (map (juxt :type identity)) output)]
+        by-type (into {} (map (juxt :type identity)) output)
+        rebuilt (mapv openai/response-input-item output)]
     (is (= {:type "search" :query "openai-java" :queries ["openai-java"] :sources []}
            (get-in by-type [:web-search-call :action])))
     (is (= ["responses"] (get-in by-type [:file-search-call :queries])))
@@ -1150,7 +1211,14 @@
     (is (= "search" (get-in by-type [:mcp-list-tools :tools 0 :name])))
     (is (= ["pwd" "ls"] (get-in by-type [:shell-call :action :commands])))
     (is (= "src/core.clj" (get-in by-type [:apply-patch-call :operation :path])))
-    (is (= "lint" (get-in by-type [:tool-search-output :tools 0 :name])))))
+    (is (= "lint" (get-in by-type [:tool-search-output :tools 0 :name])))
+    (is (.isWebSearchCall (nth rebuilt 0)))
+    (is (.isFileSearchCall (nth rebuilt 1)))
+    (is (.isCodeInterpreterCall (nth rebuilt 2)))
+    (is (.isMcpListTools (nth rebuilt 3)))
+    (is (.isShellCall (nth rebuilt 4)))
+    (is (.isApplyPatchCall (nth rebuilt 5)))
+    (is (.isToolSearchOutput (nth rebuilt 6)))))
 
 (deftest maps-output-text-annotations
   (let [m (response->map

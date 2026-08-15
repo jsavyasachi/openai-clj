@@ -11,6 +11,11 @@
                                              BetaResponseUsage
                                              BetaResponseUsage$InputTokensDetails
                                              BetaResponseUsage$OutputTokensDetails
+                                             BetaResponseFunctionToolCall
+                                             BetaResponseOutputItem
+                                             BetaResponseOutputItem$AgentMessage
+                                             BetaResponseOutputMessage
+                                             BetaResponseOutputText
                                              BetaToolChoiceOptions
                                              ResponseCreateParams
                                              ResponseCreateParams$Beta)
@@ -33,7 +38,9 @@
       (.totalTokens 30)
       (.build)))
 
-(defn- beta-response []
+(defn- beta-response
+  ([] (beta-response []))
+  ([items]
   (let [^java.util.Optional empty (java.util.Optional/empty)]
     (-> (BetaResponse/builder)
         (.id "resp_beta")
@@ -44,7 +51,7 @@
         (.metadata empty)
         (.model "gpt-beta")
         (.object_ (JsonValue/from "response"))
-        (.output [])
+        (.output items)
         (.parallelToolCalls false)
         (.temperature empty)
         (.toolChoice BetaToolChoiceOptions/AUTO)
@@ -65,7 +72,7 @@
         (.status BetaResponseStatus/COMPLETED)
         (.truncation empty)
         (.usage (empty-usage))
-        (.build))))
+        (.build)))))
 
 (deftest translates-beta-create-params
   (let [p (#'responses/->params
@@ -184,6 +191,45 @@
     (is (.isCustom (first (.tools search))))
     (is (true? (.approve approval)))
     (is (= "trusted" (impl/opt-get (.reason approval))))))
+
+(deftest accepts-all-beta-response-input-item-variants
+  (doseq [[type item? item]
+          [[:additional-tools #(.isAdditionalTools %) {:type :additional-tools :tools []}]
+           [:agent-message #(.isAgentMessage %) {:type :agent-message :author "planner" :recipient "user" :content "note"}]
+           [:apply-patch-call #(.isApplyPatchCall %) {:type :apply-patch-call :call-id "c" :operation {:type :update-file :path "p" :diff "d"} :status :completed}]
+           [:apply-patch-call-output #(.isApplyPatchCallOutput %) {:type :apply-patch-call-output :call-id "c" :status :completed :output "ok"}]
+           [:beta-easy-input-message #(.isBetaEasyInputMessage %) {:type :beta-easy-input-message :role :user :content "x"}]
+           [:beta-response-output-message #(.isBetaResponseOutputMessage %) {:type :beta-response-output-message :id "m" :role :assistant :status :completed :content "x"}]
+           [:code-interpreter-call #(.isCodeInterpreterCall %) {:type :code-interpreter-call :id "c" :code "x" :container-id "ct" :status :completed :outputs []}]
+           [:compaction #(.isCompaction %) {:type :compaction :id "c"}]
+           [:compaction-trigger #(.isCompactionTrigger %) {:type :compaction-trigger}]
+           [:computer-call #(.isComputerCall %) {:type :computer-call :id "c" :call-id "cc" :pending-safety-checks [] :status :completed}]
+           [:computer-call-output #(.isComputerCallOutput %) {:type :computer-call-output :call-id "cc" :output {:image-url "data:image/png;base64,x"}}]
+           [:custom-tool-call #(.isCustomToolCall %) {:type :custom-tool-call :id "c" :call-id "cc" :name "n" :input "x"}]
+           [:custom-tool-call-output #(.isCustomToolCallOutput %) {:type :custom-tool-call-output :call-id "cc" :output "x"}]
+           [:file-search-call #(.isFileSearchCall %) {:type :file-search-call :id "f" :queries ["q"] :status :completed :results []}]
+           [:function-call #(.isFunctionCall %) {:type :function-call :id "f" :call-id "c" :name "n" :arguments "{}"}]
+           [:function-call-output #(.isFunctionCallOutput %) {:type :function-call-output :call-id "c" :output "x"}]
+           [:image-generation-call #(.isImageGenerationCall %) {:type :image-generation-call :id "i" :status :completed :result "x"}]
+           [:item-reference #(.isItemReference %) {:type :item-reference :id "i"}]
+           [:local-shell-call #(.isLocalShellCall %) {:type :local-shell-call :id "l" :call-id "c" :action {:type :exec :command ["pwd"] :env {}} :status :completed}]
+           [:local-shell-call-output #(.isLocalShellCallOutput %) {:type :local-shell-call-output :id "l" :output "x" :status :completed}]
+           [:mcp-approval-request #(.isMcpApprovalRequest %) {:type :mcp-approval-request :id "a" :arguments "{}" :name "n" :server-label "s"}]
+           [:mcp-approval-response #(.isMcpApprovalResponse %) {:type :mcp-approval-response :approval-request-id "a" :approve true}]
+           [:mcp-call #(.isMcpCall %) {:type :mcp-call :id "m" :arguments "{}" :name "n" :server-label "s" :status :completed}]
+           [:mcp-list-tools #(.isMcpListTools %) {:type :mcp-list-tools :id "m" :server-label "s" :tools []}]
+           [:message #(.isMessage %) {:type :message :role :user :content [{:type :text :text "x"}]}]
+           [:multi-agent-call #(.isMultiAgentCall %) {:type :multi-agent-call :action :spawn-agent :call-id "c" :arguments {:x 1}}]
+           [:multi-agent-call-output #(.isMultiAgentCallOutput %) {:type :multi-agent-call-output :action :spawn-agent :call-id "c" :output "ok"}]
+           [:program #(.isProgram %) {:type :program :id "p" :call-id "c" :code "x" :fingerprint "f"}]
+           [:program-output #(.isProgramOutput %) {:type :program-output :id "p" :call-id "c" :result "x" :status :completed}]
+           [:reasoning #(.isReasoning %) {:type :reasoning :id "r" :summary []}]
+           [:shell-call #(.isShellCall %) {:type :shell-call :id "s" :call-id "c" :action :exec :environment :local :status :completed}]
+           [:shell-call-output #(.isShellCallOutput %) {:type :shell-call-output :id "s" :call-id "c" :output [{:stdout "x" :stderr "" :exit-code 0}] :status :completed}]
+           [:tool-search-call #(.isToolSearchCall %) {:type :tool-search-call :id "t" :call-id "c" :arguments {} :execution :client :status :completed}]
+           [:tool-search-output #(.isToolSearchOutput %) {:type :tool-search-output :id "t" :call-id "c" :tools [] :execution :client :status :completed}]
+           [:web-search-call #(.isWebSearchCall %) {:type :web-search-call :id "w" :action {:type :search :query "q" :queries ["q"] :sources []} :status :completed}]]]
+    (is (item? (#'responses/->input-item item)) (str type))))
 
 (deftest translates-beta-additional-input-variants
   (let [p (#'responses/->params
@@ -305,6 +351,60 @@
     (is (= "pmpt_beta" (get-in m [:prompt :id])))
     (is (= "4" (get-in m [:prompt :version])))
     (is (= "24h" (:prompt-cache-retention m)))))
+
+(deftest round-trips-beta-output-function-call-as-input
+  (let [item (BetaResponseOutputItem/ofFunctionCall
+              (-> (BetaResponseFunctionToolCall/builder)
+                  (.id "fc_beta")
+                  (.callId "call_beta")
+                  (.name "weather")
+                  (.arguments "{\"city\":\"Denver\"}")
+                  (.build)))
+        m (-> (beta-response [item])
+              (#'responses/beta-response->map)
+              :output
+              first)
+        rebuilt (#'responses/->input-item m)]
+    (is (.isFunctionCall rebuilt))
+    (is (= "call_beta" (.callId (.asFunctionCall rebuilt))))
+    (is (= "{\"city\":\"Denver\"}"
+           (.arguments (.asFunctionCall rebuilt))))))
+
+(deftest round-trips-beta-output-message-as-input
+  (let [item (BetaResponseOutputItem/ofMessage
+              (-> (BetaResponseOutputMessage/builder)
+                  (.id "msg_beta")
+                  (.role (JsonValue/from "assistant"))
+                  (.status (com.openai.models.beta.responses.BetaResponseOutputMessage$Status/of "completed"))
+                  (.addContent
+                   (-> (BetaResponseOutputText/builder)
+                       (.text "hello")
+                       (.annotations [])
+                       (.build)))
+                  (.build)))
+        m (-> (beta-response [item])
+              (#'responses/beta-response->map)
+              :output
+              first)
+        rebuilt (#'responses/->input-item m)]
+    (is (.isBetaResponseOutputMessage rebuilt))
+    (is (= "msg_beta" (.id (.asBetaResponseOutputMessage rebuilt))))))
+
+(deftest round-trips-beta-agent-output-as-input
+  (let [item (BetaResponseOutputItem/ofAgentMessage
+              (-> (BetaResponseOutputItem$AgentMessage/builder)
+                  (.id "agent_msg")
+                  (.author "planner")
+                  (.recipient "user")
+                  (.addTextContent "hello")
+                  (.build)))
+        m (-> (beta-response [item])
+              (#'responses/beta-response->map)
+              :output
+              first)
+        rebuilt (#'responses/->input-item m)]
+    (is (.isAgentMessage rebuilt))
+    (is (= "agent_msg" (impl/opt-get (.id (.asAgentMessage rebuilt)))))))
 
 (deftest maps-beta-compacted-response
   (let [r (-> (BetaCompactedResponse/builder)

@@ -178,6 +178,27 @@
 (defn json-value->clj [^JsonValue value]
   (walk/keywordize-keys (.convert value Object)))
 
+(defn sdk-input-object [m ^Class target]
+  (let [m (cond-> m
+            (and (map? m)
+                 (#{:function-call :mcp-call :mcp-approval-request} (:type m))
+                 (map? (:arguments m)))
+            (update :arguments encode-output))]
+    (.convert (JsonValue/from
+             (walk/postwalk
+              (fn [x]
+                (cond
+                  (keyword? x) (str/replace (name x) "-" "_")
+                  (map? x) (into {}
+                                 (map (fn [[k v]]
+                                        [(str/replace (if (keyword? k) (name k) (str k))
+                                                      "-" "_")
+                                         v])
+                                      x))
+                  :else x))
+              m))
+          target)))
+
 (defn sdk-object->clj [value]
   (walk/postwalk
    (fn [x]
