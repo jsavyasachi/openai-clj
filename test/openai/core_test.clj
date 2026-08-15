@@ -490,6 +490,26 @@
                    :parallel-tool-calls false})]
     (is (false? (opt (.parallelToolCalls p))))))
 
+(deftest translates-prompt-context-management-and-cache-retention
+  (let [p (params {:model "gpt-5.2"
+                   :input "hi"
+                   :prompt {:id "pmpt_weather"
+                            :version "2"
+                            :variables {:city "Denver"}}
+                   :context-management [{:type :compaction
+                                         :compact-threshold 1000}]
+                   :prompt-cache-retention "24h"})
+        prompt (opt (.prompt p))
+        variables (opt (.variables prompt))
+        context (first (opt (.contextManagement p)))]
+    (is (= "pmpt_weather" (.id prompt)))
+    (is (= "2" (opt (.version prompt))))
+    (is (= "Denver"
+           (.asStringOrThrow (get (._additionalProperties variables) "city"))))
+    (is (= "compaction" (.type context)))
+    (is (= 1000 (opt (.compactThreshold context))))
+    (is (= "24h" (.asString (opt (.promptCacheRetention p)))))))
+
 (deftest translates-json-schema-output-format
   (let [p (params {:model "gpt-5.2"
                    :input "hi"
@@ -1027,6 +1047,23 @@
              :call-id "call_comp"
              :pending-safety-checks []}]
            (:output m)))))
+
+(deftest maps-response-prompt-fields
+  (let [prompt (-> (com.openai.models.responses.ResponsePrompt/builder)
+                   (.id "pmpt_weather")
+                   (.version "2")
+                   (.build))
+        r (-> (response [])
+              .toBuilder
+              (.prompt (java.util.Optional/of prompt))
+              (.promptCacheRetention
+               (java.util.Optional/of
+                (com.openai.models.responses.Response$PromptCacheRetention/of "24h")))
+              (.build))
+        m (response->map r)]
+    (is (= "pmpt_weather" (get-in m [:prompt :id])))
+    (is (= "2" (get-in m [:prompt :version])))
+    (is (= "24h" (:prompt-cache-retention m)))))
 
 (deftest maps-agent-output-items-losslessly
   (let [web (ResponseOutputItem/ofWebSearchCall

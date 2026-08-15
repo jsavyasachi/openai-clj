@@ -190,6 +190,14 @@
        x))
    (json/read-value (json/write-value-as-string value) json-mapper)))
 
+(defn output-text [items]
+  (apply str
+         (for [item items
+               :when (= :message (:type item))
+               content (:content item)
+               :when (#{:text :output-text} (:type content))]
+           (:text content))))
+
 (defn all-pages
   "Realize each element from all pages of an SDK *ListPage with its autoPager."
   [page]

@@ -5,7 +5,13 @@
 ### Added
 - Added `openai.beta.responses` with create, create-streaming, retrieve,
   retrieve-streaming, cancel, delete, compact, input-item listing, and input
-  token count operations.
+  token count operations. The beta create request supports the SDK builder's
+  beta flags, multi-agent settings, tools, text configuration, conversation,
+  moderation, prompt, context management, and prompt cache retention fields,
+  plus beta input item variants and multimodal message content. Stable
+  Responses requests now support prompt, context management, and prompt cache
+  retention fields, and stable and beta response maps expose prompt and prompt
+  cache retention when present.
 
 ## [0.17.0] - 2026-08-14
 

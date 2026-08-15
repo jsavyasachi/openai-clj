@@ -168,9 +168,12 @@
                                          ResponseCreateParams
                                          ResponseCreateParams$Builder
                                          ResponseCreateParams$Input
+                                         ResponseCreateParams$ContextManagement
+                                         ResponseCreateParams$ContextManagement$Builder
                                          ResponseCreateParams$Metadata
                                          ResponseCreateParams$Metadata$Builder
                                          ResponseCreateParams$PromptCacheOptions
+                                         ResponseCreateParams$PromptCacheRetention
                                          ResponseCreateParams$PromptCacheOptions$Mode
                                          ResponseCreateParams$PromptCacheOptions$Ttl
                                          ResponseCreateParams$ServiceTier
@@ -228,6 +231,10 @@
                                          ResponseOutputText$Annotation$UrlCitation
                                          ResponseOutputText$Logprob
                                          ResponseOutputText$Logprob$TopLogprob
+                                         ResponsePrompt
+                                         ResponsePrompt$Builder
+                                         ResponsePrompt$Variables
+                                         ResponsePrompt$Variables$Builder
                                          ResponseReasoningItem
                                          ResponseReasoningItem$Status
                                          ResponseReasoningItem$Summary
@@ -507,6 +514,26 @@
     (when ttl (.ttl b (ResponseCreateParams$PromptCacheOptions$Ttl/of (name ttl))))
     (.build b)))
 
+(defn- ->prompt ^ResponsePrompt [{:keys [id version variables]}]
+  (let [^ResponsePrompt$Builder b (ResponsePrompt/builder)]
+    (when-not id (impl/missing-key! :id))
+    (.id b ^String id)
+    (when version (.version b ^String version))
+    (when variables
+      (let [^ResponsePrompt$Variables$Builder vb (ResponsePrompt$Variables/builder)]
+        (.additionalProperties vb ^java.util.Map (impl/->json-value-properties variables))
+        (.variables b (.build vb))))
+    (.build b)))
+
+(defn- ->context-management ^ResponseCreateParams$ContextManagement
+  [{:keys [type compact-threshold]}]
+  (let [^ResponseCreateParams$ContextManagement$Builder b
+        (ResponseCreateParams$ContextManagement/builder)]
+    (when-not type (impl/missing-key! :type))
+    (.type b ^String (impl/enum-name type))
+    (when (some? compact-threshold) (.compactThreshold b (long compact-threshold)))
+    (.build b)))
+
 (defn- ->function-parameters ^FunctionTool$Parameters [m]
   (let [^FunctionTool$Parameters$Builder b (FunctionTool$Parameters/builder)]
     (doseq [[k v] (walk/stringify-keys m)]
@@ -763,7 +790,8 @@
            metadata previous-response-id store reasoning user tools tool-choice
            parallel-tool-calls background include truncation prompt-cache-key prompt-cache-options
            safety-identifier service-tier max-tool-calls top-logprobs
-           json-schema verbosity conversation stream-options moderation]}]
+           json-schema verbosity conversation stream-options moderation prompt
+           context-management prompt-cache-retention]}]
   (when-not model (impl/missing-key! :model))
   (when-not input (impl/missing-key! :input))
   (let [^ResponseCreateParams$Builder b (ResponseCreateParams/builder)]
@@ -780,6 +808,14 @@
     (when truncation (.truncation b (ResponseCreateParams$Truncation/of (impl/enum-name truncation))))
     (when prompt-cache-key (.promptCacheKey b ^String prompt-cache-key))
     (when prompt-cache-options (.promptCacheOptions b (->prompt-cache-options prompt-cache-options)))
+    (when prompt (.prompt b (->prompt prompt)))
+    (doseq [context context-management]
+      (.addContextManagement b (->context-management context)))
+    (when prompt-cache-retention
+      (.promptCacheRetention b (ResponseCreateParams$PromptCacheRetention/of
+                                (if (keyword? prompt-cache-retention)
+                                  (name prompt-cache-retention)
+                                  (str prompt-cache-retention)))))
     (when safety-identifier (.safetyIdentifier b ^String safety-identifier))
     (when service-tier (.serviceTier b (ResponseCreateParams$ServiceTier/of (impl/enum-name service-tier))))
     (when metadata (.metadata b (->metadata metadata)))
@@ -1006,26 +1042,23 @@
   (cond-> {}
     (.isPresent (.reason d)) (assoc :reason (impl/->keyword (.asString ^com.openai.models.responses.Response$IncompleteDetails$Reason (.get (.reason d)))))))
 
-(defn- output-text [items]
-  (apply str
-         (for [item items
-               :when (= :message (:type item))
-               content (:content item)
-               :when (= :text (:type content))]
-           (:text content))))
-
 (defn- response->map [^Response r]
   (let [items (mapv output-item->map (.output r))]
     (cond-> {:id (.id r)
              :model (.asString ^ResponsesModel (.model r))
              :output items
-             :text (output-text items)
+             :text (impl/output-text items)
              :created-at (.createdAt r)}
       (.isPresent (.status r)) (assoc :status (impl/->keyword (.asString ^ResponseStatus (.get (.status r)))))
       (.isPresent (.usage r)) (assoc :usage (usage->map (.get (.usage r))))
       (.isPresent (.error r)) (assoc :error (error->map (.get (.error r))))
       (.isPresent (.incompleteDetails r)) (assoc :incomplete-details (incomplete-details->map (.get (.incompleteDetails r))))
-      (.isPresent (.previousResponseId r)) (assoc :previous-response-id (.get (.previousResponseId r))))))
+      (.isPresent (.previousResponseId r)) (assoc :previous-response-id (.get (.previousResponseId r)))
+      (.isPresent (.prompt r)) (assoc :prompt (impl/sdk-object->clj (.get (.prompt r))))
+      (.isPresent (.promptCacheRetention r))
+      (assoc :prompt-cache-retention
+             (.asString ^com.openai.models.responses.Response$PromptCacheRetention
+                        (.get (.promptCacheRetention r)))))))
 
 (defn parse-structured-output
   "Parse a Responses `:text` value and validate it against a `:json-schema`
@@ -1048,7 +1081,8 @@
   `:tool-choice`, `:parallel-tool-calls`, `:background`, `:include`,
   `:truncation`, `:prompt-cache-key`, `:safety-identifier`, `:service-tier`,
   `:max-tool-calls`, `:top-logprobs`, `:json-schema`, `:verbosity`,
-  `:conversation`, `:stream-options`, and `:moderation`.
+  `:conversation`, `:stream-options`, `:moderation`, `:prompt`,
+  `:context-management`, and `:prompt-cache-retention`.
 
   Message-vector input items accept `{:role :system|:developer|:user|:assistant
   :content \"...\"}`, multimodal content vectors containing text, image, or file
@@ -1760,7 +1794,7 @@
   (let [items (mapv output-item->map (.output r))]
     {:id (.id r)
      :output items
-     :text (output-text items)
+     :text (impl/output-text items)
      :usage (usage->map (.usage r))
      :created-at (.createdAt r)}))
 

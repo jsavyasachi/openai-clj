@@ -88,6 +88,171 @@
       (is (.isBetaResponse input))
       (is (= 1 (count (.asBetaResponse input)))))))
 
+(deftest translates-beta-create-request-surface
+  (let [p (#'responses/->params
+           {:model "gpt-beta"
+            :input [{:role :user
+                     :content [{:type :text :text "look"}
+                               {:type :image :image-url "https://example.test/cat.png"
+                                :detail :high}
+                               {:type :file :filename "notes.txt"
+                                :file-data "data:text/plain;base64,AAAA"}]}]
+            :tools [{:type :function
+                     :name "get_weather"
+                     :parameters {:type "object"}}
+                    {:type :programmatic-tool-calling}]
+            :json-schema {:name "answer"
+                          :schema {:type "object"}}
+            :verbosity :low
+            :conversation "conv_beta"
+            :moderation {:model "omni-moderation-latest"}
+            :prompt {:id "pmpt_beta"
+                     :version "3"
+                     :variables {:city "Denver"}}
+            :context-management [{:type :compaction
+                                  :compact-threshold 2000}]
+            :prompt-cache-retention "24h"})
+        prompt (impl/opt-get (.prompt p))
+        variables (impl/opt-get (.variables prompt))
+        context (first (impl/opt-get (.contextManagement p)))
+        input (impl/opt-get (.input p))
+        message (.asMessage (first (.asBetaResponse input)))
+        content (.content message)
+        tools (impl/opt-get (.tools p))]
+    (is (= "get_weather" (.name (.asFunction (first tools)))))
+    (is (.isProgrammaticToolCalling (second tools)))
+    (is (= "low" (.asString (impl/opt-get (.verbosity (impl/opt-get (.text p)))))))
+    (is (= "conv_beta" (.asId (impl/opt-get (.conversation p)))))
+    (is (= "omni-moderation-latest" (.model (impl/opt-get (.moderation p)))))
+    (is (= "pmpt_beta" (.id prompt)))
+    (is (= "3" (impl/opt-get (.version prompt))))
+    (is (= "Denver"
+           (.asStringOrThrow (get (._additionalProperties variables) "city"))))
+    (is (= "compaction" (.type context)))
+    (is (= 2000 (impl/opt-get (.compactThreshold context))))
+    (is (= "24h" (.asString (impl/opt-get (.promptCacheRetention p)))))
+    (is (= "look" (.text (.asInputText (first content)))))
+    (is (= "https://example.test/cat.png"
+           (impl/opt-get (.imageUrl (.asInputImage (second content))))))
+    (is (= "notes.txt"
+           (impl/opt-get (.filename (.asInputFile (nth content 2))))))))
+
+(deftest translates-beta-agent-tool-output-inputs
+  (let [p (#'responses/->params
+           {:model "gpt-beta"
+            :input [{:type :computer-call-output
+                     :call-id "call_computer"
+                     :output {:image-url "data:image/png;base64,abc"}
+                     :acknowledged-safety-checks [{:id "safe_1"}]}
+                    {:type :local-shell-call-output
+                     :id "shell_1"
+                     :output "ok"
+                     :status :completed}
+                    {:type :shell-call-output
+                     :call-id "call_shell"
+                     :output [{:stdout "ok" :stderr "" :exit-code 0}]}
+                    {:type :apply-patch-call-output
+                     :call-id "call_patch"
+                     :status :completed
+                     :output "done"}
+                    {:type :custom-tool-call-output
+                     :call-id "call_custom"
+                     :output {:ok true}}
+                    {:type :tool-search-output
+                     :call-id "call_search"
+                     :execution :client
+                     :status :completed
+                     :tools [{:type :custom :name "lint"}]}
+                    {:type :mcp-approval-response
+                     :approval-request-id "approval_1"
+                     :approve true
+                     :reason "trusted"}]})
+        xs (.asBetaResponse (impl/opt-get (.input p)))
+        computer (.asComputerCallOutput (nth xs 0))
+        local-shell (.asLocalShellCallOutput (nth xs 1))
+        shell (.asShellCallOutput (nth xs 2))
+        patch (.asApplyPatchCallOutput (nth xs 3))
+        custom (.asCustomToolCallOutput (nth xs 4))
+        search (.asToolSearchOutput (nth xs 5))
+        approval (.asMcpApprovalResponse (nth xs 6))]
+    (is (= "data:image/png;base64,abc" (impl/opt-get (.imageUrl (.output computer)))))
+    (is (= "safe_1" (-> computer .acknowledgedSafetyChecks impl/opt-get first .id)))
+    (is (= "ok" (.output local-shell)))
+    (is (= 0 (-> shell .output first .outcome .asExit .exitCode)))
+    (is (= "done" (impl/opt-get (.output patch))))
+    (is (= "{\"ok\":true}" (.asString (.output custom))))
+    (is (.isCustom (first (.tools search))))
+    (is (true? (.approve approval)))
+    (is (= "trusted" (impl/opt-get (.reason approval))))))
+
+(deftest translates-beta-additional-input-variants
+  (let [p (#'responses/->params
+           {:model "gpt-beta"
+            :input [{:type :agent-message :author "planner" :recipient "user" :content "agent note"}
+                    {:type :beta-easy-input-message :role :user :content "easy note"}
+                    {:type :beta-response-output-message :id "msg_1"
+                     :role :assistant :status :completed :content "output note"}
+                    {:type :multi-agent-call
+                     :action :spawn-agent
+                     :call-id "call_1"
+                     :arguments {:task "research"}}
+                    {:type :multi-agent-call-output
+                     :action :spawn-agent
+                     :call-id "call_1"
+                     :output "done"}]})
+        xs (.asBetaResponse (impl/opt-get (.input p)))]
+    (is (.isAgentMessage (nth xs 0)))
+    (is (.isBetaEasyInputMessage (nth xs 1)))
+    (is (.isBetaResponseOutputMessage (nth xs 2)))
+    (is (.isMultiAgentCall (nth xs 3)))
+    (is (.isMultiAgentCallOutput (nth xs 4)))))
+
+(deftest translates-beta-tools
+  (let [p (#'responses/->params
+           {:model "gpt-beta"
+            :input "hi"
+            :tools [{:type :function :name "weather"}
+                    {:type :web-search}
+                    {:type :file-search :vector-store-ids ["vs_1"]}
+                    {:type :mcp :server-label "docs"}
+                    {:type :code-interpreter}
+                    {:type :programmatic-tool-calling}
+                    {:type :image-generation :quality :high}
+                    {:type :computer}
+                    {:type :local-shell}
+                    {:type :shell :environment :local}
+                    {:type :apply-patch}
+                    {:type :custom :name "lint" :format :text}
+                    {:type :tool-search :parameters {:query "lint"}}]})
+        tools (impl/opt-get (.tools p))]
+    (is (.isFunction (nth tools 0)))
+    (is (.isWebSearch (nth tools 1)))
+    (is (= ["vs_1"] (vec (.vectorStoreIds (.asFileSearch (nth tools 2))))))
+    (is (.isMcp (nth tools 3)))
+    (is (.isCodeInterpreter (nth tools 4)))
+    (is (.isProgrammaticToolCalling (nth tools 5)))
+    (is (.isImageGeneration (nth tools 6)))
+    (is (.isComputer (nth tools 7)))
+    (is (.isLocalShell (nth tools 8)))
+    (is (.isShell (nth tools 9)))
+    (is (.isApplyPatch (nth tools 10)))
+    (is (.isCustom (nth tools 11)))
+    (is (.isToolSearch (nth tools 12)))))
+
+(deftest translates-beta-tool-choice
+  (let [function-choice (impl/opt-get
+                         (.toolChoice (#'responses/->params
+                                       {:model "gpt-beta"
+                                        :input "hi"
+                                        :tool-choice {:type :function :name "weather"}})))
+        programmatic-choice (impl/opt-get
+                             (.toolChoice (#'responses/->params
+                                           {:model "gpt-beta"
+                                            :input "hi"
+                                            :tool-choice {:type :programmatic-tool-calling}})))]
+    (is (= "weather" (.name (.asBetaToolChoiceFunction function-choice))))
+    (is (.isBetaSpecificProgrammaticToolCallingParam programmatic-choice))))
+
 (deftest translates-beta-operation-params
   (let [retrieve (#'responses/->retrieve-params "resp_1" {:include [:reasoning-encrypted-content]
                                                             :include-obfuscation true
@@ -122,6 +287,24 @@
                   :output-tokens-details {:reasoning-tokens 0}
                   :total-tokens 30}}
          (#'responses/beta-response->map (beta-response)))))
+
+(deftest maps-beta-response-prompt-fields
+  (let [prompt (-> (com.openai.models.beta.responses.BetaResponsePrompt/builder)
+                   (.id "pmpt_beta")
+                   (.version "4")
+                   (.build))
+        response (-> (beta-response)
+                     .toBuilder
+                     (.prompt (java.util.Optional/of prompt))
+                     (.promptCacheRetention
+                      (java.util.Optional/of
+                       (com.openai.models.beta.responses.BetaResponse$PromptCacheRetention/of
+                        "24h")))
+                     (.build))
+        m (#'responses/beta-response->map response)]
+    (is (= "pmpt_beta" (get-in m [:prompt :id])))
+    (is (= "4" (get-in m [:prompt :version])))
+    (is (= "24h" (:prompt-cache-retention m)))))
 
 (deftest maps-beta-compacted-response
   (let [r (-> (BetaCompactedResponse/builder)
