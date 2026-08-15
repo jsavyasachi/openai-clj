@@ -1,18 +1,20 @@
 # Changelog
 
-## [Unreleased]
+## [0.18.0] - 2026-08-14
 
 ### Added
-- Added `openai.beta.responses` with create, create-streaming, retrieve,
-  retrieve-streaming, cancel, delete, compact, input-item listing, and input
-  token count operations. The beta create request supports the SDK builder's
-  beta flags, multi-agent settings, tools, text configuration, conversation,
-  moderation, prompt, context management, and prompt cache retention fields,
-  plus all beta input item variants and multimodal message content. Stable
-  Responses requests now support prompt, context management, and prompt cache
-  retention fields, and both stable and beta input unions accept all SDK input
-  item variants. Stable and beta response maps expose prompt and prompt cache
-  retention when present.
+- `openai.beta.responses` wraps the beta Responses API: create, streaming
+  create, retrieve, streaming retrieve, cancel, delete, compact, input-item
+  listing, and input-token count. The create request takes beta flags,
+  multi-agent settings, tools, text configuration, conversation, moderation,
+  and multimodal message content.
+- Stable Responses requests take `:prompt`, `:context-management`, and
+  `:prompt-cache-retention`. Stable and beta response maps carry `:prompt` and
+  `:prompt-cache-retention` when the response holds them.
+- Both input unions accept every item variant the SDK defines, so an output
+  item returned by a response can be sent back as input on the next turn. This
+  is what a multi-turn tool conversation needs when the caller holds the
+  history instead of passing `:previous-response-id`.
 
 ## [0.17.0] - 2026-08-14
 
