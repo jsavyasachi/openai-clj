@@ -4,6 +4,7 @@
             [openai.admin.projects :as projects]
             [openai.impl :as impl])
   (:import (com.openai.models.admin.organization.adminapikeys AdminApiKeyCreateParams)
+           (com.openai.models.admin.organization.auditlogs AuditLogListParams AuditLogListParams$EventType)
            (com.openai.models.admin.organization.groups Group Group$Builder GroupCreateParams)
            (com.openai.models.admin.organization.groups.users UserCreateParams)
            (com.openai.models.admin.organization.invites Invite Invite$Builder Invite$Role Invite$Status)
@@ -224,6 +225,12 @@
                                      {:name "deploy" :expires-in-seconds 3600})]
     (is (= "deploy" (.name p)))
     (is (= 3600 (impl/opt-get (.expiresInSeconds p))))))
+
+(deftest builds-audit-log-list-params-with-new-event-type
+  (let [^AuditLogListParams p (#'admin/->audit-log-list-params
+                                {:event-types [:tenant-workload-identity-access-token-issued]})]
+    (is (= ["tenant_workload_identity_access_token_issued"]
+           (mapv #(.asString ^AuditLogListParams$EventType %) (impl/opt-get (.eventTypes p)))))))
 
 (deftest converts-invite-present-only
   (let [^Invite$Builder b (Invite/builder)

@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- Upgraded `com.openai/openai-java` to 4.51.0.
+- The `:error` value of an MCP call output item is a map that describes the failure, in
+  place of a string. The map carries `:type` and the fields of the reported variant: a
+  protocol error, a tool execution error, or an HTTP error.
+- OpenAI recognizes the `ultrafast` service tier, the
+  `tenant_workload_identity_access_token_issued` audit-log event type, and the
+  `gpt-5.6-cyber`, `gpt-daybreak-blue-latest`, `gpt-daybreak-red-latest`, `gpt-5.5-pro`,
+  and `gpt-5.5-2026-04-23` model identifiers. Service tiers, audit-log event types, and
+  model identifiers pass through as given, so a call site sets them with no change.
+
+### Deprecated
+- OpenAI deprecated the Sora video endpoints that `openai.videos` wraps.
+
 ## [0.16.0] - 2026-08-13
 
 ### Fixed

@@ -51,6 +51,8 @@
                                         ResponseInputContent
                                         ResponseInputItem
                                         ResponseItem
+                                        McpToolCallError
+                                        McpToolCallError$McpProtocolError
                                         ResponseOutputItemAddedEvent
                                         ResponseOutputItemDoneEvent
                                         ResponseOutputItem
@@ -104,6 +106,9 @@
 
 (defn- response-item->map [item]
   (#'openai/response-item->map item))
+
+(defn- output-item->map [item]
+  (#'openai/output-item->map item))
 
 (defn- event->map [e]
   (#'openai/event->map e))
@@ -274,6 +279,14 @@
                                    :service-tier :fast})]
     (is (= "fast" (.asString (opt (.serviceTier response-params)))))
     (is (= "fast" (.asString (opt (.serviceTier chat-params)))))))
+
+(deftest translates-ultrafast-service-tier
+  (let [response-params (params {:model "gpt-5.2" :input "hi" :service-tier :ultrafast})
+        chat-params (chat-params {:model "gpt-4o-mini"
+                                   :messages [{:role :user :content "hi"}]
+                                   :service-tier :ultrafast})]
+    (is (= "ultrafast" (.asString (opt (.serviceTier response-params)))))
+    (is (= "ultrafast" (.asString (opt (.serviceTier chat-params)))))))
 
 (deftest rejects-missing-required-keys
   (testing "missing model"
@@ -840,6 +853,27 @@
        (.output "result")
        (.status ResponseOutputItem$McpCall$Status/COMPLETED)
        (.build))))
+
+(deftest maps-mcp-call-error-as-structured-data
+  (let [error (McpToolCallError/ofProtocol
+               (-> (McpToolCallError$McpProtocolError/builder)
+                   (.code 100)
+                   (.message "invalid request")
+                   (.build)))
+        item (ResponseOutputItem/ofMcpCall
+              (-> (ResponseOutputItem$McpCall/builder)
+                  (.id "mcp_1")
+                  (.name "search")
+                  (.serverLabel "docs")
+                  (.arguments "{}")
+                  (.error (java.util.Optional/of error))
+                  (.status ResponseOutputItem$McpCall$Status/FAILED)
+                  (.build)))
+        m (output-item->map item)]
+    (is (= {:type "mcp_protocol_error"
+            :code 100
+            :message "invalid request"}
+           (:error m)))))
 
 (defn- custom-tool-call-item []
   (ResponseOutputItem/ofCustomToolCall
