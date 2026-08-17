@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.18.1] - 2026-08-17
+
+### Fixed
+
+- Realtime `dispatch!` blocks instead of silently discarding audio and
+  response-delta events when the bounded queue is full.
+- `parse-structured-output` validates the common JSON Schema constraints it
+  documents (minimum/maximum, minLength/maxLength, nested properties and items).
+
 ## [0.18.0] - 2026-08-14
 
 ### Added
