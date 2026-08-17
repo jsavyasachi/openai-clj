@@ -14,8 +14,11 @@ The library uses one `deps.edn` file. Source files are under `src/openai/`:
 
 | Namespace | Purpose |
 |---|---|
-| `openai.types` | next.jdbc `ReadableColumn` / `SettableParameter` extensions for LIST / STRUCT / MAP |
-| `openai.core` | datasource constructors, `read-parquet` / `read-csv`, `attach!`, extensions |
+| `openai.core` | client construction and shared request/response plumbing |
+| `openai.impl` | internal helpers shared across the API namespaces |
+| `openai.audio` / `openai.images` / `openai.moderations` | audio, image, and moderation endpoints |
+| `openai.realtime` | Realtime WebSocket API |
+| `openai.completions`, `openai.conversations`, `openai.vector-stores`, `openai.fine-tuning`, `openai.evals`, `openai.admin`, … | one namespace per remaining API area |
 
 Code must stay reflection-free (`*warn-on-reflection*` is on). Expected
 failures throw `ex-info` with a `:openai/error` key.
@@ -31,8 +34,8 @@ clojure -M:1.12:test       # Clojure 1.12 matrix cell
 clojure -T:build jar       # build a jar
 ```
 
-The full suite uses in-memory OpenAI. You do not need to download files or
-start services.
+The full suite is self-contained and makes no network calls. You do not need
+credentials or to start any services.
 
 Requirements for a change that can merge:
 
