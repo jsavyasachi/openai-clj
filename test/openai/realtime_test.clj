@@ -3,7 +3,8 @@
             [clojure.test :refer [deftest is testing]]
             [jsonista.core :as json]
             [openai.realtime :as realtime])
-  (:import (com.openai.models.beta.realtime.sessions SessionCreateParams
+  (:import (java.util.concurrent LinkedBlockingQueue TimeUnit)
+           (com.openai.models.beta.realtime.sessions SessionCreateParams
                                                        SessionCreateParams$Modality)
            (com.openai.models.beta.realtime.transcriptionsessions TranscriptionSessionCreateParams)
            (com.openai.models.realtime RealtimeSessionCreateRequest)
@@ -17,6 +18,19 @@
 
 (defn- json-map [s]
   (json/read-value s mapper))
+
+(deftest dispatch-blocks-until-a-bounded-queue-has-room
+  (let [queue (LinkedBlockingQueue. 1)
+        first-event {:type :response.audio.delta :delta "first"}
+        second-event {:type :response.audio.delta :delta "second"}
+        callbacks (atom [])]
+    (.put queue first-event)
+    (let [dispatch (future (#'realtime/dispatch! queue #(swap! callbacks conj %) second-event))]
+      (is (= ::blocked (deref dispatch 100 ::blocked)))
+      (is (= first-event (.poll queue 100 TimeUnit/MILLISECONDS)))
+      (is (not= ::timed-out (deref dispatch 1000 ::timed-out)))
+      (is (= second-event (.poll queue 100 TimeUnit/MILLISECONDS)))
+      (is (= [second-event] @callbacks)))))
 
 (deftest encodes-client-events-as-wire-json
   (testing "session configuration and nested enum names"

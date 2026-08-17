@@ -320,7 +320,7 @@
       (-> ^OkHttpClient http .connectionPool .evictAll))))
 
 (defn- dispatch! [^LinkedBlockingQueue queue on-event event]
-  (.offer queue event)
+  (.put queue event)
   (when on-event (on-event event)))
 
 (defn- ws-url [{:keys [url base-url model mode]}]
@@ -335,7 +335,9 @@
                     (URLEncoder/encode ^String model StandardCharsets/UTF_8)))))))
 
 (defn connect
-  "Open a Realtime WebSocket and return a RealtimeConnection."
+  "Open a Realtime WebSocket and return a RealtimeConnection. Bounded queues
+  apply backpressure: dispatch blocks until consumers make room, never dropping
+  events silently."
   [{:keys [api-key client-secret okhttp-client queue-capacity
            on-event on-open on-close on-error]
     :as opts}]

@@ -597,6 +597,17 @@
            (-> (openai/parse-structured-output {:text "{bad"} schema)
                :errors first :error)))))
 
+(deftest rejects-structured-output-violating-common-json-schema-constraints
+  (let [schema {:type "object"
+                :properties {:name {:type "string" :minLength 3}
+                             :score {:type "number" :minimum 1}}
+                :required ["name" "score"]}]
+    (is (= [{:path [:name] :error :min-length :minimum 3 :actual 2}
+            {:path [:score] :error :minimum :minimum 1 :actual 0}]
+           (:errors (openai/parse-structured-output
+                     {:text "{\"name\":\"ok\",\"score\":0}"}
+                     schema))))))
+
 (deftest translates-input-token-count-params
   (let [p (input-token-count-params {:model "gpt-5.2"
                                      :input [{:role :user :content "hi"}]

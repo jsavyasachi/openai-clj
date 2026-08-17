@@ -1096,6 +1096,40 @@
              (.asString ^com.openai.models.responses.Response$PromptCacheRetention
                         (.get (.promptCacheRetention r)))))))
 
+(defn- schema-value [schema key]
+  (if (contains? schema key)
+    (get schema key)
+    (get schema (name key))))
+
+(defn- common-constraint-errors [schema data path]
+  (let [minimum (schema-value schema :minimum)
+        maximum (schema-value schema :maximum)
+        min-length (schema-value schema :minLength)
+        max-length (schema-value schema :maxLength)
+        properties (or (schema-value schema :properties) {})
+        items (schema-value schema :items)]
+    (vec
+     (concat
+      (when (and (number? data) (some? minimum) (< data minimum))
+        [{:path path :error :minimum :minimum minimum :actual data}])
+      (when (and (number? data) (some? maximum) (> data maximum))
+        [{:path path :error :maximum :maximum maximum :actual data}])
+      (when (and (string? data) (some? min-length) (< (count data) min-length))
+        [{:path path :error :min-length :minimum min-length :actual (count data)}])
+      (when (and (string? data) (some? max-length) (> (count data) max-length))
+        [{:path path :error :max-length :maximum max-length :actual (count data)}])
+      (when (map? data)
+        (mapcat (fn [[key child-schema]]
+                  (let [data-key (if (keyword? key) key (keyword (str key)))]
+                    (when (contains? data data-key)
+                      (common-constraint-errors child-schema (get data data-key)
+                                                (conj path data-key)))))
+                properties))
+      (when (and (sequential? data) items)
+        (mapcat (fn [[index value]]
+                  (common-constraint-errors items value (conj path index)))
+                (map-indexed vector data)))))))
+
 (defn parse-structured-output
   "Parse a Responses `:text` value and validate it against a `:json-schema`
   config (or a raw schema). Returns `{:data ... :errors [...]}`."
@@ -1103,7 +1137,9 @@
   (let [schema (or (:schema json-schema) (get json-schema "schema") json-schema)]
     (try
       (let [data (impl/parse-json (:text response))]
-        {:data data :errors (impl/validate-json-schema schema data)})
+        {:data data
+         :errors (into (impl/validate-json-schema schema data)
+                       (common-constraint-errors schema data []))})
       (catch Exception e
         {:data nil
          :errors [{:path [] :error :invalid-json :message (.getMessage e)}]}))))
