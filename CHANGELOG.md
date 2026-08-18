@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.18.2] - 2026-08-17
+
+### Changed
+
+- Bump `com.openai/openai-java` to 4.52.0. New Responses streaming events
+  (shell-call command/output events) and image-generation partial-image fields
+  are surfaced through the generic stream-event normalization. No wrapper API
+  change; the release adds no new operations (Bedrock runtime support ships in a
+  separate `openai-java-bedrock` module that this wrapper does not include).
+
 ## [0.18.1] - 2026-08-17
 
 ### Fixed
