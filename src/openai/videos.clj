@@ -27,6 +27,8 @@
     (when input-reference (set-create-reference! b input-reference)) (.build b)))
 (defn- video-error->map [^VideoCreateError error]
   (cond-> {:code (.code error) :message (.message error)}
+    (.isPresent (.headers error))
+    (assoc :headers (impl/sdk-object->clj (impl/opt-get (.headers error))))
     (.isPresent (.misalignment error))
     (assoc :misalignment (impl/misalignment->map (impl/opt-get (.misalignment error))))))
 

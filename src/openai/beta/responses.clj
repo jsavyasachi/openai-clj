@@ -23,6 +23,9 @@
                                              BetaResponseStreamEvent
                                              BetaToolChoiceOptions
                                              ResponseCreateParams
+                                             ResponseCreateParams$AccessPrograms
+                                             ResponseCreateParams$AccessPrograms$Builder
+                                             ResponseCreateParams$AccessPrograms$Cyber
                                              ResponseCreateParams$Beta
                                              ResponseCreateParams$Builder
                                              ResponseCreateParams$Metadata
@@ -564,6 +567,13 @@
     (.additionalProperties b ^java.util.Map (impl/->json-value-properties m))
     (.build b)))
 
+(defn- ->access-programs ^ResponseCreateParams$AccessPrograms [{:keys [cyber]}]
+  (let [^ResponseCreateParams$AccessPrograms$Builder b
+        (ResponseCreateParams$AccessPrograms/builder)]
+    (when cyber
+      (.cyber b (ResponseCreateParams$AccessPrograms$Cyber/of (impl/enum-name cyber))))
+    (.build b)))
+
 (defn- ->multi-agent ^ResponseCreateParams$MultiAgent [{:keys [enabled max-concurrent-subagents]}]
   (let [^ResponseCreateParams$MultiAgent$Builder b (ResponseCreateParams$MultiAgent/builder)]
     (when (some? enabled) (.enabled b (boolean enabled)))
@@ -616,7 +626,7 @@
            store reasoning user tool-choice parallel-tool-calls background include truncation
            prompt-cache-key prompt-cache-options safety-identifier service-tier max-tool-calls
            top-logprobs stream-options betas multi-agent tools json-schema verbosity conversation
-           moderation prompt context-management prompt-cache-retention]}]
+           moderation prompt context-management prompt-cache-retention access-programs]}]
   (when-not model (impl/missing-key! :model))
   (when-not input (impl/missing-key! :input))
   (let [^ResponseCreateParams$Builder b (ResponseCreateParams/builder)]
@@ -649,6 +659,7 @@
     (when safety-identifier (.safetyIdentifier b ^String safety-identifier))
     (when service-tier (.serviceTier b (ResponseCreateParams$ServiceTier/of (impl/enum-name service-tier))))
     (when metadata (.metadata b (->metadata metadata)))
+    (when access-programs (.accessPrograms b (->access-programs access-programs)))
     (when previous-response-id (.previousResponseId b ^String previous-response-id))
     (when (some? store) (.store b (boolean store)))
     (when reasoning (.reasoning b (->reasoning reasoning)))
@@ -795,7 +806,9 @@
       (:incomplete-details m) (assoc :incomplete-details (:incomplete-details m))
       (:previous-response-id m) (assoc :previous-response-id (:previous-response-id m))
       (:prompt m) (assoc :prompt (:prompt m))
-      (:prompt-cache-retention m) (assoc :prompt-cache-retention (:prompt-cache-retention m)))))
+      (:prompt-cache-retention m) (assoc :prompt-cache-retention (:prompt-cache-retention m))
+      (:access-programs m) (assoc :access-programs
+                                  (update (:access-programs m) :cyber impl/->keyword)))))
 
 (defn- beta-response->map ^clojure.lang.IPersistentMap [^BetaResponse response]
   (let [m (beta-response-data->map (normalize-value (impl/sdk-object->clj response)))

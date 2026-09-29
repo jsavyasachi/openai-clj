@@ -3,7 +3,7 @@
             [openai.videos :as videos])
   (:import (com.openai.core JsonValue)
            (com.openai.models.videos Video Video$Builder Video$Status VideoCreateCharacterResponse
-                                     VideoCreateError VideoDeleteResponse
+                                     VideoCreateError VideoCreateError$Headers VideoDeleteResponse
                                      VideoCreateParams VideoCreateParams$InputReference
                                      VideoModel VideoSeconds VideoSize)))
 
@@ -97,3 +97,15 @@
                     (.build)))]
     (is (= {:code "render_failed" :message "Could not render"} mapped))
     (is (not (contains? mapped :misalignment)))))
+
+(deftest converts-video-error-headers
+  (let [headers (-> (VideoCreateError$Headers/builder)
+                    (.putAdditionalProperty "x-request-id" (JsonValue/from "req_123"))
+                    (.build))
+        error (-> (VideoCreateError/builder)
+                  (.code "render_failed")
+                  (.message "Could not render")
+                  (.headers headers)
+                  (.build))]
+    (is (= {:x-request-id "req_123"}
+           (:headers (#'videos/video-error->map error))))))

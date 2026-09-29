@@ -30,8 +30,11 @@
            (com.openai.models.completions CompletionUsage)
            (com.openai.models.models Model)
            (com.openai.models.responses ResponseCreateParams
+                                        ResponseCreateParams$AccessPrograms$Cyber
                                         ResponseCreateParams$ToolChoice
                                         ResponseIncludable
+                                        Response$AccessPrograms
+                                        Response$AccessPrograms$Cyber
                                         Response$IncompleteDetails
                                         Response$IncompleteDetails$Reason
                                         Response$PromptCacheDiagnostics$CacheMiss
@@ -1268,6 +1271,22 @@
     (is (= "pmpt_weather" (get-in m [:prompt :id])))
     (is (= "2" (get-in m [:prompt :version])))
     (is (= "24h" (:prompt-cache-retention m)))))
+
+(deftest translates-response-access-programs
+  (let [p (params {:model "gpt-5.2" :input "hello"
+                   :access-programs {:cyber :daybreak-blue}})
+        response (-> (response [])
+                     .toBuilder
+                     (.accessPrograms
+                      (-> (Response$AccessPrograms/builder)
+                          (.cyber (Response$AccessPrograms$Cyber/of "daybreak_red"))
+                          (.build)))
+                     (.build))]
+    (is (= "daybreak_blue"
+           (.asString ^ResponseCreateParams$AccessPrograms$Cyber
+                      (opt (.cyber (opt (.accessPrograms p)))))))
+    (is (= {:cyber :daybreak-red}
+           (:access-programs (response->map response))))))
 
 (deftest maps-response-prompt-cache-diagnostics
   (let [cache-miss (-> (Response$PromptCacheDiagnostics$CacheMiss/builder)

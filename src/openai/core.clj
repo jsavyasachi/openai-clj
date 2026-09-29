@@ -163,10 +163,15 @@
                                          FunctionTool$Parameters
                                          FunctionTool$Parameters$Builder
                                          Response
+                                         Response$AccessPrograms
+                                         Response$AccessPrograms$Cyber
                                          Response$IncompleteDetails
                                          Response$PromptCacheDiagnostics
                                          Response$PromptCacheDiagnostics$CacheMiss
                                          ResponseCreateParams
+                                         ResponseCreateParams$AccessPrograms
+                                         ResponseCreateParams$AccessPrograms$Builder
+                                         ResponseCreateParams$AccessPrograms$Cyber
                                          ResponseCreateParams$Builder
                                          ResponseCreateParams$Input
                                          ResponseCreateParams$ContextManagement
@@ -391,6 +396,13 @@
   (let [^ResponseCreateParams$Metadata$Builder b (ResponseCreateParams$Metadata/builder)]
     (doseq [[k v] (walk/stringify-keys m)]
       (.putAdditionalProperty b ^String k (JsonValue/from (str v))))
+    (.build b)))
+
+(defn- ->access-programs ^ResponseCreateParams$AccessPrograms [{:keys [cyber]}]
+  (let [^ResponseCreateParams$AccessPrograms$Builder b
+        (ResponseCreateParams$AccessPrograms/builder)]
+    (when cyber
+      (.cyber b (ResponseCreateParams$AccessPrograms$Cyber/of (impl/enum-name cyber))))
     (.build b)))
 
 (defn- ->role ^EasyInputMessage$Role [role]
@@ -889,7 +901,7 @@
            parallel-tool-calls background include truncation prompt-cache-key prompt-cache-options
            safety-identifier service-tier max-tool-calls top-logprobs
            json-schema verbosity conversation stream-options moderation prompt
-           context-management prompt-cache-retention]}]
+           context-management prompt-cache-retention access-programs]}]
   (when-not model (impl/missing-key! :model))
   (when-not input (impl/missing-key! :input))
   (let [^ResponseCreateParams$Builder b (ResponseCreateParams/builder)]
@@ -917,6 +929,7 @@
     (when safety-identifier (.safetyIdentifier b ^String safety-identifier))
     (when service-tier (.serviceTier b (ResponseCreateParams$ServiceTier/of (impl/enum-name service-tier))))
     (when metadata (.metadata b (->metadata metadata)))
+    (when access-programs (.accessPrograms b (->access-programs access-programs)))
     (when previous-response-id (.previousResponseId b ^String previous-response-id))
     (when (some? store) (.store b (boolean store)))
     (when reasoning (.reasoning b (->reasoning reasoning)))
@@ -1191,7 +1204,10 @@
       (.isPresent (.promptCacheRetention r))
       (assoc :prompt-cache-retention
              (.asString ^com.openai.models.responses.Response$PromptCacheRetention
-                        (.get (.promptCacheRetention r)))))
+                        (.get (.promptCacheRetention r))))
+      (.isPresent (.accessPrograms r))
+      (assoc :access-programs
+             (update (impl/sdk-object->clj (.get (.accessPrograms r))) :cyber impl/->keyword)))
      r opts))))
 
 (defn- schema-value [schema key]
