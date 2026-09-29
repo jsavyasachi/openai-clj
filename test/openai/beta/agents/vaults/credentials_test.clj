@@ -5,6 +5,7 @@
            (com.openai.core JsonValue)
            (com.openai.models.beta.agents.vaults.credentials Credential
                                                                 Credential$Builder
+                                                                Credential$Metadata
                                                                 CredentialAuth$StaticBearer
                                                                 CredentialAuth$StaticBearer$Builder
                                                                 CredentialCreateParams
@@ -39,7 +40,9 @@
     (catch java.io.FileNotFoundException _
       nil)))
 
-(defn- response-credential [id name]
+(defn- response-credential
+  ([id name] (response-credential id name (-> (Credential$Metadata/builder) (.build))))
+  ([id name metadata]
   (let [^CredentialAuth$StaticBearer$Builder auth
         (CredentialAuth$StaticBearer/builder)
         ^Credential$Builder credential (Credential/builder)]
@@ -47,11 +50,18 @@
     (.id credential ^String id)
     (.auth credential (.build auth))
     (.createdAt credential 1700000000)
+    (.metadata credential metadata)
     (.name credential ^String name)
     (.object_ credential (JsonValue/from "vault.credential"))
     (.updatedAt credential 1700000100)
     (.vaultId credential "vault_1")
-    (.build credential)))
+    (.build credential))))
+
+(defn- response-credential-with-metadata [id name]
+  (response-credential id name
+                       (-> (Credential$Metadata/builder)
+                           (.putAdditionalProperty "team" (JsonValue/from "platform"))
+                           (.build))))
 
 (defn- client-for [^CredentialService credential-service]
   (let [vaults (proxy [VaultService] []
@@ -123,6 +133,7 @@
                   :auth {:type :static-bearer
                          :mcp-server-url "https://example.test/mcp"}
                   :created-at 1700000000
+                  :metadata {}
                   :name "Test credential"
                   :updated-at 1700000100
                   :vault-id "vault_1"}
@@ -139,6 +150,38 @@
                                                  {:name "Test"}))))))
       (is false
           "openai.beta.agents.vaults.credentials/create-credential is not implemented"))))
+
+(deftest translates-credential-metadata
+  (let [create-credential
+        (wrapper-var 'openai.beta.agents.vaults.credentials/create-credential)
+        update-credential
+        (wrapper-var 'openai.beta.agents.vaults.credentials/update-credential)]
+    (if (and create-credential update-credential)
+      (let [captured (atom [])
+            response (response-credential-with-metadata "cred_1" "Test credential")
+            service (proxy [CredentialService] []
+                      (create [p] (swap! captured conj p) response)
+                      (update [p] (swap! captured conj p) response))
+            client (client-for service)
+            created (create-credential client "vault_1"
+                                       {:name "Test credential"
+                                        :auth {:type :static-bearer :token "secret"}
+                                        :metadata {:team "platform"}})
+            updated (update-credential client "vault_1" "cred_1"
+                                       {:metadata {:team "platform"}})]
+        (is (= "platform"
+               (.asStringOrThrow
+                (get (._additionalProperties
+                      (impl/opt-get (.metadata ^CredentialCreateParams (first @captured))))
+                     "team"))))
+        (is (= "platform"
+               (.asStringOrThrow
+                (get (._additionalProperties
+                      (impl/opt-get (.metadata ^CredentialUpdateParams (second @captured))))
+                     "team"))))
+        (is (= {:team "platform"} (:metadata created)))
+        (is (= {:team "platform"} (:metadata updated))))
+      (is false "credential metadata support is not implemented"))))
 
 (deftest retrieves-credential
   (let [retrieve-credential
@@ -175,7 +218,7 @@
                     {:auth {:type :static-bearer
                             :token "test-rotated-secret"}})
             ^CredentialUpdateParams params @captured
-            auth (json-value->clj (.auth params))]
+            auth (json-value->clj (impl/opt-get (.auth params)))]
         (is (= "vault_1" (.vaultId params)))
         (is (= "cred_1" (.get (.credentialId params))))
         (is (= {:type "static_bearer" :token "test-rotated-secret"} auth))

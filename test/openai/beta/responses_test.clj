@@ -6,6 +6,8 @@
            (com.openai.models.beta.responses BetaCompactedResponse
                                              BetaResponseCompactionCompactingEvent
                                              BetaResponse
+                                             BetaResponse$AccessPrograms
+                                             BetaResponse$AccessPrograms$Cyber
                                              BetaResponse$PromptCacheDiagnostics$CacheMiss
                                              BetaResponse$PromptCacheDiagnostics$CacheMiss$Reason
                                              BetaResponseStatus
@@ -21,6 +23,7 @@
                                              BetaResponseOutputText
                                              BetaToolChoiceOptions
                                              ResponseCreateParams
+                                             ResponseCreateParams$AccessPrograms$Cyber
                                              ResponseCreateParams$Beta)
            (com.openai.models.beta.responses.inputtokens InputTokenCountResponse)))
 
@@ -384,6 +387,23 @@
     (is (= "pmpt_beta" (get-in m [:prompt :id])))
     (is (= "4" (get-in m [:prompt :version])))
     (is (= "24h" (:prompt-cache-retention m)))))
+
+(deftest translates-beta-response-access-programs
+  (let [p (#'responses/->params
+           {:model "gpt-beta" :input "hello"
+            :access-programs {:cyber :daybreak-blue}})
+        response (-> (beta-response)
+                     .toBuilder
+                     (.accessPrograms
+                      (-> (BetaResponse$AccessPrograms/builder)
+                          (.cyber (BetaResponse$AccessPrograms$Cyber/of "daybreak_red"))
+                          (.build)))
+                     (.build))]
+    (is (= "daybreak_blue"
+           (.asString ^ResponseCreateParams$AccessPrograms$Cyber
+                      (impl/opt-get (.cyber (impl/opt-get (.accessPrograms p)))))))
+    (is (= {:cyber :daybreak-red}
+           (:access-programs (#'responses/beta-response->map response))))))
 
 (deftest maps-beta-response-prompt-cache-diagnostics
   (let [cache-miss (-> (BetaResponse$PromptCacheDiagnostics$CacheMiss/builder)

@@ -15,13 +15,15 @@
                                                                 CredentialAuthRotateParam$StaticBearer$Builder
                                                                 CredentialCreateParams
                                                                 CredentialCreateParams$Builder
+                                                                CredentialCreateParams$Metadata
                                                                 CredentialDeleteParams
                                                                 CredentialListPage
                                                                 CredentialListParams
                                                                 CredentialListParams$Builder
                                                                 CredentialListParams$Order
                                                                 CredentialRetrieveParams
-                                                                CredentialUpdateParams)
+                                                                CredentialUpdateParams
+                                                                CredentialUpdateParams$Metadata)
            (com.openai.services.blocking BetaService)
            (com.openai.services.blocking.beta AgentService)
            (com.openai.services.blocking.beta.agents VaultService)
@@ -41,8 +43,14 @@
 (defn- ->credential-auth-rotate-param ^CredentialAuthRotateParam [auth]
   (impl/sdk-input-object auth CredentialAuthRotateParam))
 
+(defn- ->credential-create-metadata ^CredentialCreateParams$Metadata [metadata]
+  (impl/sdk-input-object metadata CredentialCreateParams$Metadata))
+
+(defn- ->credential-update-metadata ^CredentialUpdateParams$Metadata [metadata]
+  (impl/sdk-input-object metadata CredentialUpdateParams$Metadata))
+
 (defn- ->credential-create-params ^CredentialCreateParams
-  [^String vault-id {:keys [name auth]}]
+  [^String vault-id {:keys [name auth metadata]}]
   (when-not vault-id (impl/missing-key! :vault-id))
   (when-not name (impl/missing-key! :name))
   (when-not auth (impl/missing-key! :auth))
@@ -50,6 +58,7 @@
     (.vaultId b vault-id)
     (.name b ^String name)
     (.auth b (->credential-auth-create-param auth))
+    (when metadata (.metadata b (->credential-create-metadata metadata)))
     (.build b)))
 
 (defn- ->credential-retrieve-params ^CredentialRetrieveParams
@@ -62,15 +71,16 @@
       (.build)))
 
 (defn- ->credential-update-params ^CredentialUpdateParams
-  [^String vault-id ^String credential-id {:keys [auth]}]
+  [^String vault-id ^String credential-id {:keys [auth metadata]}]
   (when-not vault-id (impl/missing-key! :vault-id))
   (when-not credential-id (impl/missing-key! :credential-id))
-  (when-not auth (impl/missing-key! :auth))
-  (-> (CredentialUpdateParams/builder)
-      (.vaultId vault-id)
-      (.credentialId credential-id)
-      (.auth (->credential-auth-rotate-param auth))
-      (.build)))
+  (when-not (or auth metadata) (impl/missing-key! :auth))
+  (let [b (CredentialUpdateParams/builder)]
+    (.vaultId b vault-id)
+    (.credentialId b credential-id)
+    (when auth (.auth b (->credential-auth-rotate-param auth)))
+    (when metadata (.metadata b (->credential-update-metadata metadata)))
+    (.build b)))
 
 (defn- ->credential-list-params ^CredentialListParams
   [^String vault-id {:keys [after limit order]}]
@@ -105,6 +115,7 @@
   {:id (.id credential)
    :auth (keywordize-auth-types (impl/sdk-object->clj (.auth credential)))
    :created-at (.createdAt credential)
+   :metadata (impl/sdk-object->clj (.metadata credential))
    :name (.name credential)
    :updated-at (.updatedAt credential)
    :vault-id (.vaultId credential)})

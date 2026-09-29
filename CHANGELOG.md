@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-09-28
+
+### Changed
+
+- Bump `com.openai/openai-java` and `openai-java-bedrock` to 4.70.0.
+
+### Added
+
+- Add `:access-programs {:cyber ...}` request and response support to stable
+  and beta Responses APIs.
+- Add `:metadata` support to beta Agent vault credential creation, update, and
+  response maps.
+- Preserve optional `:headers` on Video API creation errors.
+
 ## [0.33.4] - 2026-09-24
 
 ### Changed

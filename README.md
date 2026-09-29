@@ -17,18 +17,18 @@ official Java SDK.
 deps.edn:
 
 ```clojure
-net.clojars.savya/openai-clj {:mvn/version "0.33.4"}
+net.clojars.savya/openai-clj {:mvn/version "0.34.0"}
 ```
 
 Leiningen:
 
 ```clojure
-[net.clojars.savya/openai-clj "0.33.4"]
+[net.clojars.savya/openai-clj "0.34.0"]
 ```
 
 Supported Clojure versions: 1.10, 1.11, and 1.12.
 
-Tracks [`com.openai/openai-java` 4.69.2](https://github.com/openai/openai-java/releases/tag/v4.69.2).
+Tracks [`com.openai/openai-java` 4.70.0](https://github.com/openai/openai-java/releases/tag/v4.70.0).
 
 ## Providers
 
@@ -480,7 +480,10 @@ Async clients, raw-response accessors, and per-call `RequestOptions` are
 transport and accessor variants, not endpoints. The library does not duplicate them.
 The managed Responses WebSocket connection (added in SDK 4.65.0) is likewise a
 transport variant over an endpoint already covered via REST/SSE, and is not
-wrapped.
+wrapped. The SDK's 4.70.0 WebSocket connection, transcript grouping, and
+response-accumulator helper classes likewise remain transport/helper surface;
+`openai.realtime` continues to provide this library's normalized WebSocket
+transport.
 
 ## Running tests
 
