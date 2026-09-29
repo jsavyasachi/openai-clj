@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.34.1] - 2026-09-29
+
+### Changed
+
+- Bump `com.openai/openai-java` and `openai-java-bedrock` to 4.71.0. No new
+  API surface; upstream changes are retry-delay capping, error-response
+  cleanup, and realtime/translation transport fixes.
+
 ## [0.34.0] - 2026-09-28
 
 ### Changed
