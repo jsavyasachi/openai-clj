@@ -94,6 +94,9 @@
                      (beta [] beta-service))]
         (testing "request parameters"
           (is (= "gpt-4o" (.model params)))
+          (is (= "gpt-6.1-sol"
+                 (.model ^AgentCreateParams
+                         (build-params {:model :gpt-6.1-sol}))))
           (is (= "planner"
                  (-> params ._additionalBodyProperties
                      (get "name") json-value->clj)))

@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-09-29
+
+### Changed
+
+- Bump `com.openai/openai-java` and `openai-java-bedrock` to 4.72.0.
+
+### Added
+
+- Cover beta Agents computer-use tools, environments, templates, session input,
+  session/output items, and required-action shapes through the existing generic
+  SDK conversion paths, including hosted desktop settings and blocked domains.
+- Accept the `gpt-6.1-sol` model name through existing string model fields.
+
 ## [0.34.1] - 2026-09-29
 
 ### Changed
