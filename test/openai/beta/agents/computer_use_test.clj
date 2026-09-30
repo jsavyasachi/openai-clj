@@ -25,12 +25,14 @@
     (let [^EnvironmentParam environment
           (impl/sdk-input-object
            {:type :openai-hosted
+            :container-size :medium
             :desktop {:enabled true}
             :network {:access :restricted
                       :blocked-domains ["blocked.example"]}}
            EnvironmentParam)]
       (is (.isOpenAIHosted environment))
       (is (= {:type "openai_hosted"
+              :container-size "medium"
               :desktop {:enabled true}
               :network {:access "restricted"
                         :blocked-domains ["blocked.example"]}}

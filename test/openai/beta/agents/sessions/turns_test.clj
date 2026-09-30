@@ -154,9 +154,9 @@
             result (list-turns client "sess_1" {:limit 1 :order :asc})]
         (is (= ["turn_1" "turn_2"] (mapv :id result)))
         (is (= [:in-progress :completed] (mapv :status result)))
-        (is (= [nil "turn_1" "turn_2"]
+        (is (= [nil "turn_1"]
                (mapv #(impl/opt-get (.after ^TurnListParams %)) @captured)))
-        (is (= [1 1 1]
+        (is (= [1 1]
                (mapv #(impl/opt-get (.limit ^TurnListParams %)) @captured))))
       (is false "openai.beta.agents.sessions.turns/list-turns is not implemented"))))
 

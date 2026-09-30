@@ -169,7 +169,12 @@
     (when limit (.limit b (long limit))) (when after (.after b ^String after))
     (when before (.before b ^String before)) (.build b)))
 (defn- audit-log->map [^AuditLogListResponse a]
-  {:id (.id a) :effective-at (.effectiveAt a) :type (impl/->keyword (.type a))})
+  (cond-> {:id (.id a) :effective-at (.effectiveAt a) :type (impl/->keyword (.type a))}
+    (.isPresent (.externalStorageRegistered a))
+    (assoc :external-storage-registered
+           (keywordize-types
+            (impl/sdk-object->clj
+             (impl/opt-get (.externalStorageRegistered a)))))))
 (defn audit-log-list
   ([^OpenAIClient client] (audit-log-list client {}))
   ([^OpenAIClient client opts]

@@ -120,9 +120,9 @@
         (is (= [:input-text :input-text]
                (mapv #(get-in % [:content 0 :type]) result)))
         (is (= [7 7] (mapv :future-field result)))
-        (is (= [nil "item_1" "item_2"]
+        (is (= [nil "item_1"]
                (mapv #(impl/opt-get (.after ^ItemListParams %)) @captured)))
-        (is (= [1 1 1]
+        (is (= [1 1]
                (mapv #(impl/opt-get (.limit ^ItemListParams %)) @captured))))
       (is false "openai.beta.agents.sessions.items/list-items is not implemented"))))
 

@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-09-30
+
+### Changed
+
+- Bump `com.openai/openai-java` and `openai-java-bedrock` to 4.73.0.
+
+### Added
+
+- Add `openai.beta.agents.sessions.traces/list` for session trace retrieval,
+  including keyword `:order` and normalized trace/OTLP response maps.
+- Add `openai.realtime/create-translation-client-secret` using the SDK's
+  Realtime Translation client-secret service.
+- Preserve external-storage provider `:handler` data in create params,
+  configuration maps, and `external-storage-registered` audit-log entries.
+- Cover hosted agent environment `:container-size` through the generic SDK
+  conversion path.
+- Respect SDK `has_more` pagination termination for Agent item, turn, and
+  environment-template lists.
+
 ## [0.35.0] - 2026-09-29
 
 ### Changed

@@ -1866,6 +1866,12 @@
                                  :base-url "https://example.openai.azure.com"
                                  :azure-service-version "2024-10-21"}))))
 
+(deftest response-params-accept-azure-deployment-model-names
+  (let [^ResponseCreateParams response-params
+        (params {:model "azure-responses-deployment" :input "hi"})]
+    (is (= "azure-responses-deployment"
+           (.asString (opt (.model response-params)))))))
+
 (deftest translates-compound-file-search-filters
   (testing "and/or of comparison filters"
     (let [t (first (opt (.tools (params {:model "gpt-5.2"

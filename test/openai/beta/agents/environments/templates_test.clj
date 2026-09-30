@@ -163,12 +163,10 @@
   (if-let [list-templates (api 'list)]
     (let [captured (atom [])
           page* (atom nil)
-          empty-page* (atom nil)
           service (proxy [TemplateService] []
                     (list [params]
                       (case (count (swap! captured conj params))
                         1 @page*
-                        2 @empty-page*
                         (throw (ex-info "Unexpected extra page request" {})))))
           ^TemplateListPageResponse$Builder response-builder
           (TemplateListPageResponse/builder)
@@ -184,18 +182,10 @@
                    (.response response)
                    (.build))]
       (reset! page* page)
-      ;; The SDK stops paging on empty data, even when hasMore is false.
-      (reset! empty-page*
-              (-> page .toBuilder
-                  (.response (-> response .toBuilder
-                                 (.data (java.util.Collections/emptyList))
-                                 (.build)))
-                  (.build)))
       (is (= [expected-template]
              (list-templates (client-for service)
                              {:after "tmpl_100" :limit 10 :order :asc})))
-      (is (= 2 (count @captured)))
-      (is (= "tmpl_123" (.get (.after ^TemplateListParams (second @captured)))))
+      (is (= 1 (count @captured)))
       (let [^TemplateListParams params (first @captured)]
         (is (= "tmpl_100" (.get (.after params))))
         (is (= 10 (.get (.limit params))))
