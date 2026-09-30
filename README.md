@@ -17,18 +17,18 @@ official Java SDK.
 deps.edn:
 
 ```clojure
-net.clojars.savya/openai-clj {:mvn/version "0.34.1"}
+net.clojars.savya/openai-clj {:mvn/version "0.35.0"}
 ```
 
 Leiningen:
 
 ```clojure
-[net.clojars.savya/openai-clj "0.34.1"]
+[net.clojars.savya/openai-clj "0.35.0"]
 ```
 
 Supported Clojure versions: 1.10, 1.11, and 1.12.
 
-Tracks [`com.openai/openai-java` 4.71.0](https://github.com/openai/openai-java/releases/tag/v4.71.0).
+Tracks [`com.openai/openai-java` 4.72.0](https://github.com/openai/openai-java/releases/tag/v4.72.0).
 
 ## Providers
 
@@ -465,7 +465,7 @@ the beta multi-agent orchestration platform - see "Beta Agents API" above.
 retrieve, list, delete, and validation operations. `openai.safety` includes
 safety alert and safety case retrieval.
 `openai.graders` maps to the stable grader-model service. Model names are passed
-through as strings, including `"gpt-6-astra"`. The service exposes
+through as strings, including `"gpt-6-astra"` and `"gpt-6.1-sol"`. The service exposes
 no operations in SDK 4.62.0.
 
 List functions remain eager by default. Additive lazy siblings cover models,
