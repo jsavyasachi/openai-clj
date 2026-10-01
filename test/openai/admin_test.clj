@@ -4,7 +4,7 @@
             [openai.admin.projects :as projects]
             [openai.impl :as impl])
   (:import (com.openai.models.admin.organization.adminapikeys AdminApiKeyCreateParams)
-           (com.openai.models.admin.organization.auditlogs AuditLogListParams AuditLogListParams$EventType)
+           (com.openai.models.admin.organization.auditlogs AuditLogListParams AuditLogListParams$EventType AuditLogListResponse AuditLogListResponse$Builder AuditLogListResponse$ExternalStorageRegistered AuditLogListResponse$Type)
            (com.openai.models.admin.organization.externalstorage ExternalStorageConfiguration ExternalStorageCreateParams ExternalStorageDeleteParams ExternalStorageListParams ExternalStorageListParams$Order ExternalStorageRetrieveParams ExternalStorageValidateParams)
            (com.openai.models.admin.organization.groups Group Group$Builder GroupCreateParams)
            (com.openai.models.admin.organization.groups.users UserCreateParams)
@@ -300,7 +300,8 @@
   (let [^ExternalStorageCreateParams create
         (#'admin/->external-storage-create-params
          {:project-id "proj_1"
-          :provider {:type :aws :bucket "exports" :role-arn "arn:aws:iam::1:role/openai"}})
+          :provider {:type :aws :bucket "exports" :role-arn "arn:aws:iam::1:role/openai"
+                     :handler {:name "audit" :enabled true}}})
         ^ExternalStorageRetrieveParams retrieve
         (#'admin/->external-storage-retrieve-params "storage_1")
         ^ExternalStorageDeleteParams delete
@@ -313,6 +314,8 @@
     (is (= "proj_1" (.projectId create)))
     (is (.isAws (.provider create)))
     (is (= "exports" (.bucket (.asAws (.provider create)))))
+    (is (= {:name "audit" :enabled true}
+           (:handler (impl/sdk-object->clj (.asAws (.provider create))))))
     (is (= "storage_1" (.get (.externalStorageId retrieve))))
     (is (= "storage_1" (.get (.externalStorageId delete))))
     (is (= "storage_1" (.get (.externalStorageId validate))))
@@ -326,10 +329,38 @@
   (let [configuration (impl/sdk-input-object
                        {:id "storage_1" :created-at 123 :geography "us"
                         :object "external_storage" :project-id "proj_1"
-                        :provider {:type :aws :bucket "exports" :role-arn "arn:aws:iam::1:role/openai"}
+                        :provider {:type :aws :bucket "exports" :role-arn "arn:aws:iam::1:role/openai"
+                                   :handler {:name "audit" :enabled true}}
                         :status "active"}
                        ExternalStorageConfiguration)]
     (is (= {:id "storage_1" :created-at 123 :geography "us" :project-id "proj_1"
-            :provider {:type :aws :bucket "exports" :role-arn "arn:aws:iam::1:role/openai"}
+            :provider {:type :aws :bucket "exports" :role-arn "arn:aws:iam::1:role/openai"
+                       :handler {:name "audit" :enabled true}}
             :status :active}
            (#'admin/external-storage->map configuration)))))
+
+(deftest converts-external-storage-registered-audit-log-provider-handler
+  (let [^AuditLogListResponse$ExternalStorageRegistered registered
+        (impl/sdk-input-object
+                    {:id "storage_1"
+                     :data {:geography "us"
+                            :provider {:type :azure :account-name "acct"
+                                       :container "exports" :resource-group "rg"
+                                       :subscription-id "sub" :tenant-id "tenant"
+                                       :handler {:name "audit" :enabled true}}}}
+                    com.openai.models.admin.organization.auditlogs.AuditLogListResponse$ExternalStorageRegistered)
+        ^AuditLogListResponse$Builder builder (AuditLogListResponse/builder)
+        event (do (.id builder "log_1")
+                  (.effectiveAt builder 123)
+                  (.type builder (AuditLogListResponse$Type/of "external_storage_registered"))
+                  (.externalStorageRegistered builder registered)
+                  (.build builder))]
+    (is (= {:id "log_1" :effective-at 123 :type :external-storage-registered
+            :external-storage-registered
+            {:id "storage_1"
+             :data {:geography "us"
+                    :provider {:type :azure :account-name "acct"
+                               :container "exports" :resource-group "rg"
+                               :subscription-id "sub" :tenant-id "tenant"
+                               :handler {:name "audit" :enabled true}}}}}
+           (#'admin/audit-log->map event)))))

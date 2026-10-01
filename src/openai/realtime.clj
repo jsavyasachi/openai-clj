@@ -33,6 +33,9 @@
                                                       ClientSecretCreateParams$ExpiresAfter
                                                       ClientSecretCreateParams$ExpiresAfter$Anchor
                                                       ClientSecretCreateResponse)
+           (com.openai.models.realtime RealtimeTranslationClientSecretCreateRequest
+                                       RealtimeTranslationClientSecretCreateResponse)
+           (com.openai.services.blocking.realtime.translations ClientSecretService)
            (java.net URLEncoder)
            (java.nio.charset StandardCharsets)
            (java.util.concurrent Executors LinkedBlockingQueue ScheduledExecutorService
@@ -194,6 +197,31 @@
     (-> client .realtime .clientSecrets
         (.create (->client-secret-params req))
         client-secret-response->map)))
+
+(defn- ->translation-client-secret-params
+  ^com.openai.models.realtime.translations.clientsecrets.ClientSecretCreateParams
+  [req]
+  (let [^com.openai.models.realtime.translations.clientsecrets.ClientSecretCreateParams$Builder b
+        (com.openai.models.realtime.translations.clientsecrets.ClientSecretCreateParams/builder)]
+    (.realtimeTranslationClientSecretCreateRequest
+     b ^RealtimeTranslationClientSecretCreateRequest
+     (impl/sdk-input-object req RealtimeTranslationClientSecretCreateRequest))
+    (.build b)))
+
+(defn- translation-client-secret-response->map
+  [^RealtimeTranslationClientSecretCreateResponse response]
+  (update (sdk-object->map response) :session
+          #(assoc % :type :realtime-translation)))
+
+(defn create-translation-client-secret
+  "Create a short-lived Realtime Translation client secret through the SDK."
+  [^OpenAIClient client req]
+  (impl/with-api-errors
+    (let [^ClientSecretService service
+          (.. client (realtime) (translations) (clientSecrets))
+          ^RealtimeTranslationClientSecretCreateResponse response
+          (.create service (->translation-client-secret-params req))]
+      (translation-client-secret-response->map response))))
 
 (defn create-session
   "Create a legacy beta Realtime session and return a normalized map."

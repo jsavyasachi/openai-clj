@@ -2,9 +2,11 @@
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [jsonista.core :as json]
+            [openai.impl :as impl]
             [openai.realtime :as realtime])
   (:import (java.util.concurrent LinkedBlockingQueue TimeUnit)
            (java.io ByteArrayInputStream)
+           (com.openai.client OpenAIClient)
            (com.openai.models.beta.realtime.sessions SessionCreateParams
                                                        SessionCreateParams$Modality)
            (com.openai.models.beta.realtime.transcriptionsessions TranscriptionSessionCreateParams)
@@ -325,6 +327,43 @@
           {:session {:model "gpt-realtime-translate"
                      :audio {:output {:language "es"}}}
            :expires-after {:anchor :created-at :seconds 300}}))))
+
+(deftest creates-translation-client-secret-through-sdk-service
+  (let [captured (atom nil)
+        response (impl/sdk-input-object
+                  {:expires-at 1234 :value "ek_translation"
+                   :session {:id "trs_1" :model "gpt-realtime-translate"
+                             :type "realtime.translation"
+                             :audio {:output {:language "es"}}}}
+                  com.openai.models.realtime.RealtimeTranslationClientSecretCreateResponse)
+        service (proxy [com.openai.services.blocking.realtime.translations.ClientSecretService] []
+                  (create [params] (reset! captured params) response))
+        translations (proxy [com.openai.services.blocking.realtime.TranslationService] []
+                       (clientSecrets [] service))
+        realtime (proxy [com.openai.services.blocking.RealtimeService] []
+                   (translations [] translations))
+        client (proxy [OpenAIClient] [] (realtime [] realtime))
+        create-translation-client-secret
+        (try
+          (require 'openai.realtime)
+          (ns-resolve 'openai.realtime 'create-translation-client-secret)
+          (catch java.io.FileNotFoundException _ nil))]
+    (if create-translation-client-secret
+      (let [result (@create-translation-client-secret
+                    client {:session {:model "gpt-realtime-translate"
+                                     :audio {:output {:language "es"}}}
+                            :expires-after {:anchor :created-at :seconds 300}})
+            ^com.openai.models.realtime.translations.clientsecrets.ClientSecretCreateParams params @captured
+            request (.realtimeTranslationClientSecretCreateRequest params)]
+        (is (= {:value "ek_translation" :expires-at 1234
+                :session {:id "trs_1" :model "gpt-realtime-translate"
+                          :type :realtime-translation
+                          :audio {:output {:language "es"}}}}
+               result))
+        (is (= "gpt-realtime-translate"
+               (.model (.session request))))
+        (is (= 300 (.get (.seconds (.get (.expiresAfter request)))))))
+      (is false "translation client-secret SDK operation is not wrapped"))))
 
 (deftest builds-sip-call-params
   (let [^CallAcceptParams accept (#'realtime/->accept-call-params
