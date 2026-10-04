@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-10-04
+
+### Changed
+
+- Track `com.openai/openai-java` and `openai-java-bedrock` 4.76.0. The SDK
+  deprecates older model and image-size constants; wrapper passthrough is
+  unchanged.
+
+### Added
+
+- Add `openai.audio/create-voice` for audio-sample and prompt voice creation.
+- Add agent session webhook event types and unwrapped event conversion.
+- Add `:input-cache-write-12h-tokens` to completions usage results.
+
 ## [0.37.0] - 2026-10-03
 
 ### Changed

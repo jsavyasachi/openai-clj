@@ -4,11 +4,17 @@
             [openai.webhooks :as webhooks])
   (:import (com.openai.client OpenAIClient)
            (com.openai.core.http Headers)
-           (com.openai.models.webhooks RealtimeCallIncomingWebhookEvent SafetyDeactivationIssuedWebhookEvent SafetyWarningIssuedWebhookEvent WebhookVerificationParams)
+           (com.openai.models.webhooks AgentSessionActionRequiredWebhookEvent AgentSessionCreatedWebhookEvent
+                                       RealtimeCallIncomingWebhookEvent SafetyDeactivationIssuedWebhookEvent SafetyWarningIssuedWebhookEvent
+                                       UnwrapWebhookEvent WebhookCreateParams WebhookTestParams WebhookUpdateParams WebhookVerificationParams)
            (com.openai.services.blocking WebhookService)
            (java.lang.reflect InvocationHandler Proxy)))
 
 (set! *warn-on-reflection* true)
+
+(defn- opt [o]
+  (when (.isPresent ^java.util.Optional o)
+    (.get ^java.util.Optional o)))
 
 (defn- throwing-client ^OpenAIClient []
   (let [handler (reify InvocationHandler
@@ -69,6 +75,34 @@
     (is (= "case_2" (get-in (impl/sdk-object->clj deactivation) [:data :id])))
     (is (= "srtp" (get-in (impl/sdk-object->clj incoming)
                             [:data :sip-media-security])))))
+
+(deftest translates-agent-session-webhook-event-types
+  (let [create (#'webhooks/->create-params {:name "agent" :url "https://example.test"
+                                            :event-types [:agent.session.created]})
+        update (#'webhooks/->update-params "we_123" {:event-types [:agent.session.created]})
+        test (#'webhooks/->test-params "we_123" {:event-type :agent.session.created})]
+    (is (= ["agent.session.created"]
+           (mapv #(.asString %) (.eventTypes ^WebhookCreateParams create))))
+    (is (= ["agent.session.created"]
+           (mapv #(.asString %) (opt (.eventTypes ^WebhookUpdateParams update)))))
+    (is (= "agent.session.created" (.asString (.eventType ^WebhookTestParams test))))))
+
+(deftest converts-agent-session-unwrapped-webhook-events
+  (let [created (impl/sdk-input-object
+                 {:id "evt_created" :created-at 1 :object "event" :type "agent.session.created"
+                  :data {:id "session_1" :environment-type "browser"}}
+                 AgentSessionCreatedWebhookEvent)
+        action-required (impl/sdk-input-object
+                         {:id "evt_action" :created-at 2 :object "event" :type "agent.session.action_required"
+                          :data {:id "session_2" :required-action {:type "approve"}}}
+                         AgentSessionActionRequiredWebhookEvent)]
+    (is (= {:type "agent.session.created" :data {:id "session_1" :environment-type "browser"}}
+           (select-keys (impl/sdk-object->clj (UnwrapWebhookEvent/ofAgentSessionCreated created))
+                        [:type :data])))
+    (is (= {:type "agent.session.action_required"
+            :data {:id "session_2" :required-action {:type "approve"}}}
+           (select-keys (impl/sdk-object->clj (UnwrapWebhookEvent/ofAgentSessionActionRequired action-required))
+                        [:type :data])))))
 
 
 (defn- api [sym]

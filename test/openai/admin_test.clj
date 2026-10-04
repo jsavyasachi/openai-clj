@@ -127,6 +127,17 @@
                        :model "gpt-4.1"}]}
            (#'admin/usage-completions-bucket->map bucket)))))
 
+(deftest converts-usage-completions-cache-write-12h-tokens
+  (let [present (-> (UsageCompletionsResponse$Data$Result$OrganizationUsageCompletionsResult/builder)
+                    (.inputTokens 10) (.numModelRequests 2) (.outputTokens 4)
+                    (.inputCacheWrite12hTokens 7) (.build))
+        absent (-> (UsageCompletionsResponse$Data$Result$OrganizationUsageCompletionsResult/builder)
+                   (.inputTokens 10) (.numModelRequests 2) (.outputTokens 4) (.build))]
+    (is (= 7 (:input-cache-write-12h-tokens
+              (#'admin/usage-completions-result->map present))))
+    (is (not (contains? (#'admin/usage-completions-result->map absent)
+                        :input-cache-write-12h-tokens)))))
+
 (deftest exposes-organization-and-project-service-operations
   (doseq [v [#'admin/admin-api-key-create #'admin/audit-log-list
              #'admin/certificate-activate #'admin/group-user-create

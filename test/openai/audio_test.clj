@@ -1,7 +1,9 @@
 (ns openai.audio-test
   (:require [clojure.test :refer [deftest is]]
             [openai.audio :as audio])
-  (:import (com.openai.models.audio AudioModel AudioResponseFormat)
+  (:import (com.openai.client OpenAIClient)
+           (com.openai.models.audio AudioModel AudioResponseFormat)
+           (com.openai.core JsonValue)
            (com.openai.models.audio.speech SpeechCreateParams
                                            SpeechCreateParams$ResponseFormat
                                            SpeechCreateParams$Voice
@@ -15,7 +17,12 @@
                                                 TranslationCreateParams
                                                 TranslationCreateParams$ResponseFormat
                                                 TranslationCreateResponse
-                                                TranslationVerbose)))
+                                                TranslationVerbose)
+           (com.openai.models.audio.voices Voice Voice$Type
+                                          VoiceCreateParams
+                                          VoiceCreateParams$Body$AudioSample$Type)
+           (com.openai.services.blocking AudioService)
+           (com.openai.services.blocking.audio VoiceService)))
 
 (set! *warn-on-reflection* true)
 
@@ -31,6 +38,9 @@
 
 (defn- translation-params ^TranslationCreateParams [m]
   (#'audio/->translation-params m))
+
+(defn- voice-params ^VoiceCreateParams [m]
+  (#'audio/->voice-params m))
 
 (deftest translates-speech-params
   (let [p (speech-params {:input "Hello"
@@ -109,3 +119,44 @@
     (is (= {:text "verbose" :language "en" :duration 2.5}
            (#'audio/translation-response->map
             (TranslationCreateResponse/ofVerbose verbose))))))
+
+(deftest builds-voice-audio-sample-params
+  (let [p (voice-params {:type :audio-sample
+                         :audio-sample (.getBytes "audio" "UTF-8")
+                         :consent "I consent"
+                         :name "Ada"})
+        body (.asAudioSample (.body p))]
+    (is (= "I consent" (.consent body)))
+    (is (= "Ada" (.name body)))
+    (is (= "audio_sample" (.asString ^VoiceCreateParams$Body$AudioSample$Type
+                                       (opt (.type body)))))
+    (is (= [97 117 100 105 111] (vec (.readAllBytes (.audioSample body)))))))
+
+(deftest builds-voice-prompt-params
+  (let [p (voice-params {:type :prompt :name "Ada" :prompt "Warm and clear"
+                         :model "gpt-4o-mini-tts" :script-hint "Welcome"})
+        body (.asPrompt (.body p))]
+    (is (= "Ada" (.name body)))
+    (is (= "Warm and clear" (.prompt body)))
+    (is (= "gpt-4o-mini-tts" (.asString (opt (.model body)))))
+    (is (= "Welcome" (opt (.scriptHint body))))))
+
+(deftest converts-voice-result
+  (let [voice (-> (Voice/builder) (.id "voice_123") (.createdAt 42) (.name "Ada")
+                  (.object_ (JsonValue/from "voice")) (.type Voice$Type/PROMPT) (.build))]
+    (is (= {:id "voice_123" :created-at 42 :name "Ada" :object "voice" :type :prompt}
+           (#'audio/voice->map voice)))))
+
+(deftest rejects-missing-or-invalid-voice-variant
+  (doseq [req [{} {:type :unsupported}]]
+    (let [error (try (voice-params req) nil (catch clojure.lang.ExceptionInfo e e))]
+      (is (= :invalid-voice-variant (:openai/error (ex-data error)))))))
+
+(deftest creates-voice-through-the-audio-service
+  (let [voice (-> (Voice/builder) (.id "voice_123") (.createdAt 42) (.name "Ada")
+                  (.object_ (JsonValue/from "voice")) (.type Voice$Type/PROMPT) (.build))
+        service (proxy [VoiceService] [] (create [_] voice))
+        audio-service (proxy [AudioService] [] (voices [] service))
+        client (proxy [OpenAIClient] [] (audio [] audio-service))]
+    (is (= {:id "voice_123" :created-at 42 :name "Ada" :object "voice" :type :prompt}
+           (audio/create-voice client {:type :prompt :name "Ada" :prompt "Warm and clear"})))))
