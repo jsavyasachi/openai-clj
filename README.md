@@ -17,18 +17,18 @@ official Java SDK.
 deps.edn:
 
 ```clojure
-net.clojars.savya/openai-clj {:mvn/version "0.37.0"}
+net.clojars.savya/openai-clj {:mvn/version "0.38.0"}
 ```
 
 Leiningen:
 
 ```clojure
-[net.clojars.savya/openai-clj "0.37.0"]
+[net.clojars.savya/openai-clj "0.38.0"]
 ```
 
 Supported Clojure versions: 1.10, 1.11, and 1.12.
 
-Tracks [`com.openai/openai-java` 4.75.1](https://github.com/openai/openai-java/releases/tag/v4.75.1).
+Tracks [`com.openai/openai-java` 4.76.0](https://github.com/openai/openai-java/releases/tag/v4.76.0).
 
 ## Providers
 
@@ -410,6 +410,10 @@ accept kebab-case request maps. Realtime WebSockets take a transport config map.
 (images/generate client {:model "gpt-image-1" :prompt "A Clojure logo"})
 (audio/create-speech client {:model "gpt-4o-mini-tts" :voice :alloy
                              :input "Hello"})
+(audio/create-voice client {:type :audio-sample :audio-sample voice-sample
+                            :consent "I consent" :name "Ada"})
+(audio/create-voice client {:type :prompt :name "Ada" :prompt "Warm and clear"
+                            :model "gpt-4o-mini-tts" :script-hint "Welcome"})
 (cpc/create client {:file "image.png"})
 (moderations/create client {:input "text"})
 (safety/retrieve client "safety_alert_...")
@@ -433,7 +437,7 @@ accept kebab-case request maps. Realtime WebSockets take a transport config map.
                           :transport {:sdp browser-sdp-offer}})
 (webhooks/unwrap webhook-client raw-body request-headers)
 (webhooks/create client {:name "primary" :url "https://example.test/webhooks"
-                         :event-types [:response-completed]})
+                         :event-types [:agent.session.created]})
 (webhooks/list client {:limit 20})
 (webhooks/retrieve client "we_...")
 (webhooks/update client "we_..." {:name "primary-v2"})

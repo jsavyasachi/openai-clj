@@ -626,6 +626,7 @@
     (.isPresent (.apiKeyId r)) (assoc :api-key-id (impl/opt-get (.apiKeyId r)))
     (.isPresent (.batch r)) (assoc :batch (impl/opt-get (.batch r)))
     (.isPresent (.inputAudioTokens r)) (assoc :input-audio-tokens (impl/opt-get (.inputAudioTokens r)))
+    (.isPresent (.inputCacheWrite12hTokens r)) (assoc :input-cache-write-12h-tokens (impl/opt-get (.inputCacheWrite12hTokens r)))
     (.isPresent (.inputCachedTokens r)) (assoc :input-cached-tokens (impl/opt-get (.inputCachedTokens r)))
     (.isPresent (.model r)) (assoc :model (impl/opt-get (.model r)))
     (.isPresent (.outputAudioTokens r)) (assoc :output-audio-tokens (impl/opt-get (.outputAudioTokens r)))

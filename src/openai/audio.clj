@@ -5,6 +5,12 @@
            (com.openai.core MultipartField MultipartField$Builder)
            (com.openai.core.http HttpResponse StreamResponse)
            (com.openai.models.audio AudioResponseFormat)
+           (com.openai.models.audio.voices Voice
+                                           VoiceCreateParams
+                                           VoiceCreateParams$Builder
+                                           VoiceCreateParams$Body$AudioSample
+                                           VoiceCreateParams$Body$AudioSample$Type
+                                           VoiceCreateParams$Body$Prompt)
            (com.openai.models.audio.speech SpeechCreateParams
                                            SpeechCreateParams$Builder
                                            SpeechCreateParams$ResponseFormat
@@ -41,7 +47,8 @@
            (com.openai.services.blocking AudioService)
            (com.openai.services.blocking.audio SpeechService
                                                  TranscriptionService
-                                                 TranslationService)
+                                                 TranslationService
+                                                 VoiceService)
            (java.io ByteArrayInputStream File InputStream)
            (java.nio.file Files Path)
            (java.util.stream Stream)))
@@ -195,6 +202,48 @@
       (cond-> {:text (.text x) :language (.language x) :duration (.duration x)}
         (.isPresent (.segments x)) (assoc :segments (mapv segment->map (impl/opt-get (.segments x))))))))
 
+(defn- invalid-voice-variant! [type]
+  (throw (ex-info "Unsupported voice creation variant"
+                  {:openai/error :invalid-voice-variant :type type})))
+
+(defn- ->voice-params ^VoiceCreateParams
+  [{:keys [type audio-sample consent name prompt model script-hint]}]
+  (let [^VoiceCreateParams$Builder b (VoiceCreateParams/builder)]
+    (case type
+      :audio-sample
+      (do
+        (when-not audio-sample (impl/missing-key! :audio-sample))
+        (when-not consent (impl/missing-key! :consent))
+        (when-not name (impl/missing-key! :name))
+        (.body b
+               (let [body (VoiceCreateParams$Body$AudioSample/builder)]
+                 (.audioSample body (->input-stream audio-sample))
+                 (.consent body ^String consent)
+                 (.name body ^String name)
+                 (.type body (VoiceCreateParams$Body$AudioSample$Type/of "audio_sample"))
+                 (.build body))))
+
+      :prompt
+      (do
+        (when-not name (impl/missing-key! :name))
+        (when-not prompt (impl/missing-key! :prompt))
+        (.body b
+               (let [body (VoiceCreateParams$Body$Prompt/builder)]
+                 (.name body ^String name)
+                 (.prompt body ^String prompt)
+                 (.type body (com.openai.core.JsonValue/from "prompt"))
+                 (when model (.model body ^String model))
+                 (when script-hint (.scriptHint body ^String script-hint))
+                 (.build body))))
+
+      (invalid-voice-variant! type))
+    (.build b)))
+
+(defn- voice->map [^Voice voice]
+  {:id (.id voice) :created-at (.createdAt voice) :name (.name voice)
+   :object (impl/json-value->clj (._object_ voice))
+   :type (impl/->keyword (.asString (.type voice)))})
+
 (defn- transcription-event->map [^TranscriptionStreamEvent event]
   (cond
     (.isTranscriptTextDelta event)
@@ -224,6 +273,14 @@
     (let [^AudioService audio (.audio client)
           ^TranscriptionService svc (.transcriptions audio)]
       (transcription-response->map (.create svc (->transcription-params req))))))
+
+(defn create-voice
+  "Create a custom voice and return a normalized response map."
+  [^OpenAIClient client req]
+  (impl/with-api-errors
+    (let [^AudioService audio (.audio client)
+          ^VoiceService svc (.voices audio)]
+      (voice->map (.create svc (->voice-params req))))))
 
 (defn create-transcription-streaming
   "Stream a transcription. Call `on-event` and return concatenated text deltas."
