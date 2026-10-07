@@ -188,7 +188,9 @@
   [{:keys [tools call-id id execution status]}]
   (when-not tools (impl/missing-key! :tools))
   (let [b (com.openai.models.beta.responses.BetaResponseToolSearchOutputItemParam/builder)]
-    (.tools b ^java.util.List (mapv ->tool tools))
+    (.tools b ^java.util.List
+            (mapv #(impl/sdk-input-object % com.openai.models.beta.responses.BetaResponseToolSearchOutputItemParam$Tool)
+                  tools))
     (when call-id (.callId b ^String call-id))
     (when id (.id b ^String id))
     (when execution

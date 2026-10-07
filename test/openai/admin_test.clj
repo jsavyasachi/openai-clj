@@ -18,7 +18,15 @@
            (com.openai.models.admin.organization.projects.spendlimit ProjectSpendLimit ProjectSpendLimitDeleted ProjectSpendLimit$Currency ProjectSpendLimit$Interval ProjectSpendLimit$Enforcement ProjectSpendLimit$Enforcement$Status)
            (com.openai.models.admin.organization.spendlimit OrganizationSpendLimit OrganizationSpendLimitDeleted OrganizationSpendLimit$Currency OrganizationSpendLimit$Interval OrganizationSpendLimit$Enforcement OrganizationSpendLimit$Enforcement$Status)
            (com.openai.models.admin.organization.spendalerts OrganizationSpendAlert OrganizationSpendAlert$Currency OrganizationSpendAlert$Interval OrganizationSpendAlert$NotificationChannel)
-           (com.openai.models.admin.organization.usage UsageCompletionsParams UsageCostsParams UsageCompletionsResponse$Data UsageCompletionsResponse$Data$Result$OrganizationUsageCompletionsResult)))
+           (com.openai.models.admin.organization.usage UsageCompletionsParams UsageCostsParams
+                                                      UsageWebSearchCallsParams
+                                                      UsageCompletionsResponse$Data
+                                                      UsageCompletionsResponse$Data$Result$OrganizationUsageCompletionsResult
+                                                      UsageCompletionsResponse$Data$Result$OrganizationUsageCompletionsResult$ApiSource
+                                                      UsageWebSearchCallsResponse$Data$Result$OrganizationUsageWebSearchesResult
+                                                      UsageWebSearchCallsResponse$Data$Result$OrganizationUsageWebSearchesResult$ApiSource
+                                                      UsageCostsResponse$Data$Result$OrganizationCostsResult
+                                                      UsageCostsResponse$Data$Result$OrganizationCostsResult$ApiSource)))
 (set! *warn-on-reflection* true)
 (deftest translates-project-create
   (let [^ProjectCreateParams p (#'admin/->project-create-params {:name "research"})]
@@ -137,6 +145,49 @@
               (#'admin/usage-completions-result->map present))))
     (is (not (contains? (#'admin/usage-completions-result->map absent)
                         :input-cache-write-12h-tokens)))))
+
+(deftest converts-usage-api-source-on-completions
+  (let [present (-> (UsageCompletionsResponse$Data$Result$OrganizationUsageCompletionsResult/builder)
+                    (.inputTokens 10) (.numModelRequests 2) (.outputTokens 4)
+                    (.apiSource UsageCompletionsResponse$Data$Result$OrganizationUsageCompletionsResult$ApiSource/AGENTS_API)
+                    (.build))
+        absent (-> (UsageCompletionsResponse$Data$Result$OrganizationUsageCompletionsResult/builder)
+                   (.inputTokens 10) (.numModelRequests 2) (.outputTokens 4) (.build))]
+    (is (= :agents-api (:api-source (#'admin/usage-completions-result->map present))))
+    (is (not (contains? (#'admin/usage-completions-result->map absent) :api-source)))))
+
+(deftest converts-usage-api-source-on-web-search-calls
+  (let [present (-> (UsageWebSearchCallsResponse$Data$Result$OrganizationUsageWebSearchesResult/builder)
+                    (.numModelRequests 2) (.numRequests 4)
+                    (.apiSource UsageWebSearchCallsResponse$Data$Result$OrganizationUsageWebSearchesResult$ApiSource/AGENTS_API)
+                    (.build))
+        absent (-> (UsageWebSearchCallsResponse$Data$Result$OrganizationUsageWebSearchesResult/builder)
+                   (.numModelRequests 2) (.numRequests 4) (.build))]
+    (is (= :agents-api (:api-source (#'admin/usage-web-search-calls-result->map present))))
+    (is (not (contains? (#'admin/usage-web-search-calls-result->map absent) :api-source)))))
+
+(deftest converts-usage-api-source-and-user-id-on-costs
+  (let [present (-> (UsageCostsResponse$Data$Result$OrganizationCostsResult/builder)
+                    (.apiSource UsageCostsResponse$Data$Result$OrganizationCostsResult$ApiSource/AGENTS_API)
+                    (.userId "user_1")
+                    (.build))
+        absent (-> (UsageCostsResponse$Data$Result$OrganizationCostsResult/builder)
+                   (.build))]
+    (is (= :agents-api (:api-source (#'admin/usage-costs-result->map present))))
+    (is (= "user_1" (:user-id (#'admin/usage-costs-result->map present))))
+    (is (not (contains? (#'admin/usage-costs-result->map absent) :api-source)))
+    (is (not (contains? (#'admin/usage-costs-result->map absent) :user-id)))))
+
+(deftest builds-usage-group-by-api-source
+  (let [^UsageCompletionsParams completions
+        (#'admin/->usage-completions-params {:start-time 100 :group-by [:api-source]})
+        ^UsageWebSearchCallsParams web-search-calls
+        (#'admin/->usage-web-search-calls-params {:start-time 100 :group-by [:api-source]})
+        ^UsageCostsParams costs
+        (#'admin/->usage-costs-params {:start-time 100 :group-by [:api-source :user-id]})]
+    (is (= ["api_source"] (mapv str (impl/opt-get (.groupBy completions)))))
+    (is (= ["api_source"] (mapv str (impl/opt-get (.groupBy web-search-calls)))))
+    (is (= ["api_source" "user_id"] (mapv str (impl/opt-get (.groupBy costs)))))))
 
 (deftest exposes-organization-and-project-service-operations
   (doseq [v [#'admin/admin-api-key-create #'admin/audit-log-list

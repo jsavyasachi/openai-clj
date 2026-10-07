@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-10-06
+
+### Changed
+
+- Bump `com.openai/openai-java` and `openai-java-bedrock` to 4.78.0, covering
+  upstream 4.77.0 and 4.78.0.
+
+### Added
+
+- Add Decisions creation with idiomatic request and response maps.
+- Add Agent Session turn item listing with eager pagination.
+- Add admin usage `:api-source` grouping and usage result fields, plus costs
+  `:user-id`.
+- Add streaming Chat Completion delta audio conversion.
+- Preserve `:review-target` in misalignment error maps.
+- Add MCP, Code Interpreter, and image generation tool-search output tools.
+
 ## [0.38.0] - 2026-10-04
 
 ### Changed

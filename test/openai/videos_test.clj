@@ -75,6 +75,7 @@
   (let [misalignment (-> (com.openai.models.videos.VideoCreateError$Misalignment/builder)
                          (.detailedExplanation "The video request needs review.")
                          (.errorType "potentially_unintended_data_access")
+                         (.reviewTarget "prompt")
                          (.steer (-> (com.openai.models.videos.VideoCreateError$Misalignment$Steer/builder)
                                      (.message "Please revise the prompt.")
                                      (.build)))
@@ -88,6 +89,7 @@
             :message "Could not render"
             :misalignment {:detailed-explanation "The video request needs review."
                            :error-type :potentially-unintended-data-access
+                           :review-target "prompt"
                            :steer {:message "Please revise the prompt."}}}
            (#'videos/video-error->map error))))
   (let [mapped (#'videos/video-error->map

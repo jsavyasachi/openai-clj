@@ -45,6 +45,7 @@
                                                ChatCompletionChunk
                                                ChatCompletionChunk$Choice
                                                ChatCompletionChunk$Choice$Delta
+                                               ChatCompletionChunk$Choice$Delta$Audio
                                                ChatCompletionChunk$Choice$Delta$Role
                                                ChatCompletionChunk$Choice$Delta$ToolCall
                                                ChatCompletionChunk$Choice$Delta$ToolCall$Function
@@ -490,7 +491,9 @@
 (defn- ->tool-search-output ^ResponseInputItem [{:keys [tools call-id id execution status]}]
   (when-not tools (impl/missing-key! :tools))
   (let [b (com.openai.models.responses.ResponseToolSearchOutputItemParam/builder)]
-    (.tools b ^java.util.List (mapv ->tool tools))
+    (.tools b ^java.util.List
+            (mapv #(impl/sdk-input-object % com.openai.models.responses.ResponseToolSearchOutputItemParam$Tool)
+                  tools))
     (when call-id (.callId b ^String call-id))
     (when id (.id b ^String id))
     (when execution
@@ -1839,7 +1842,14 @@
   (cond-> {}
     (.isPresent (.role d)) (assoc :role (impl/->keyword (.asString ^ChatCompletionChunk$Choice$Delta$Role (.get (.role d)))))
     (.isPresent (.content d)) (assoc :content (.get (.content d)))
-    (.isPresent (.toolCalls d)) (assoc :tool-calls (mapv chat-delta-tool-call->map (.get (.toolCalls d))))))
+    (.isPresent (.toolCalls d)) (assoc :tool-calls (mapv chat-delta-tool-call->map (.get (.toolCalls d))))
+    (.isPresent (.audio d)) (assoc :audio
+                                   (let [^ChatCompletionChunk$Choice$Delta$Audio a (impl/opt-get (.audio d))]
+                                     (cond-> {}
+                                       (.isPresent (.id a)) (assoc :id (impl/opt-get (.id a)))
+                                       (.isPresent (.data a)) (assoc :data (impl/opt-get (.data a)))
+                                       (.isPresent (.transcript a)) (assoc :transcript (impl/opt-get (.transcript a)))
+                                       (.isPresent (.expiresAt a)) (assoc :expires-at (impl/opt-get (.expiresAt a))))))))
 
 (defn- chat-chunk-choice->map [^ChatCompletionChunk$Choice c]
   (cond-> {:index (.index c)
