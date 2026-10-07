@@ -211,6 +211,28 @@
     (is (true? (.approve approval)))
     (is (= "trusted" (impl/opt-get (.reason approval))))))
 
+(deftest builds-beta-tool-search-output-new-tool-variants
+  (let [item (#'responses/->input-item
+              {:type :tool-search-output
+               :tools [{:type :mcp :server-label "docs"}
+                       {:type :code-interpreter :container "auto"}
+                       {:type :image-generation :model "gpt-image-1"}]})
+        tools (.tools (.asToolSearchOutput item))]
+    (is (= true (.isMcp (first tools))))
+    (is (= "docs" (.serverLabel (.asMcp (first tools)))))
+    (is (= true (.isCodeInterpreter (second tools))))
+    (is (= "auto" (.asString (.container (.asCodeInterpreter (second tools))))))
+    (is (= true (.isImageGeneration (nth tools 2))))
+    (is (= "gpt-image-1"
+           (.asString (impl/opt-get (.model (.asImageGeneration (nth tools 2)))))))))
+
+(deftest builds-beta-tool-search-output-function-tool
+  (let [item (#'responses/->input-item
+              {:type :tool-search-output :tools [{:type :function :name "get_weather"}]})
+        tool (first (.tools (.asToolSearchOutput item)))]
+    (is (= true (.isFunction tool)))
+    (is (= "get_weather" (.name (.asFunction tool))))))
+
 (deftest accepts-all-beta-response-input-item-variants
   (doseq [[type item? item]
           [[:additional-tools #(.isAdditionalTools %) {:type :additional-tools :tools []}]

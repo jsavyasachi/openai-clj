@@ -624,6 +624,7 @@
 (defn- usage-completions-result->map [^com.openai.models.admin.organization.usage.UsageCompletionsResponse$Data$Result$OrganizationUsageCompletionsResult r]
   (cond-> {:input-tokens (.inputTokens r) :num-model-requests (.numModelRequests r) :output-tokens (.outputTokens r)}
     (.isPresent (.apiKeyId r)) (assoc :api-key-id (impl/opt-get (.apiKeyId r)))
+    (.isPresent (.apiSource r)) (assoc :api-source (impl/->keyword (.asString ^com.openai.core.Enum (impl/opt-get (.apiSource r)))))
     (.isPresent (.batch r)) (assoc :batch (impl/opt-get (.batch r)))
     (.isPresent (.inputAudioTokens r)) (assoc :input-audio-tokens (impl/opt-get (.inputAudioTokens r)))
     (.isPresent (.inputCacheWrite12hTokens r)) (assoc :input-cache-write-12h-tokens (impl/opt-get (.inputCacheWrite12hTokens r)))
@@ -664,9 +665,11 @@
   (cond-> {}
     (.isPresent (.amount r)) (assoc :amount (usage-cost-amount->map (impl/opt-get (.amount r))))
     (.isPresent (.apiKeyId r)) (assoc :api-key-id (impl/opt-get (.apiKeyId r)))
+    (.isPresent (.apiSource r)) (assoc :api-source (impl/->keyword (.asString ^com.openai.core.Enum (impl/opt-get (.apiSource r)))))
     (.isPresent (.lineItem r)) (assoc :line-item (impl/opt-get (.lineItem r)))
     (.isPresent (.projectId r)) (assoc :project-id (impl/opt-get (.projectId r)))
-    (.isPresent (.quantity r)) (assoc :quantity (impl/opt-get (.quantity r)))))
+    (.isPresent (.quantity r)) (assoc :quantity (impl/opt-get (.quantity r)))
+    (.isPresent (.userId r)) (assoc :user-id (impl/opt-get (.userId r)))))
 (defn- usage-costs-bucket->map [^com.openai.models.admin.organization.usage.UsageCostsResponse$Data bucket]
   {:start-time (.startTime bucket) :end-time (.endTime bucket)
    :results (mapv (fn [^com.openai.models.admin.organization.usage.UsageCostsResponse$Data$Result r] (usage-costs-result->map (.asOrganizationCosts r))) (.results bucket))})
@@ -851,6 +854,7 @@
 (defn- usage-web-search-calls-result->map [^com.openai.models.admin.organization.usage.UsageWebSearchCallsResponse$Data$Result$OrganizationUsageWebSearchesResult r]
   (cond-> {:num-model-requests (.numModelRequests r) :num-requests (.numRequests r)}
     (.isPresent (.apiKeyId r)) (assoc :api-key-id (impl/opt-get (.apiKeyId r)))
+    (.isPresent (.apiSource r)) (assoc :api-source (impl/->keyword (.asString ^com.openai.core.Enum (impl/opt-get (.apiSource r)))))
     (.isPresent (.contextLevel r)) (assoc :context-level (impl/opt-get (.contextLevel r)))
     (.isPresent (.model r)) (assoc :model (impl/opt-get (.model r)))
     (.isPresent (.projectId r)) (assoc :project-id (impl/opt-get (.projectId r)))

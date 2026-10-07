@@ -14,6 +14,7 @@
                                                ChatCompletionChunk
                                                ChatCompletionChunk$Choice
                                                ChatCompletionChunk$Choice$Delta
+                                               ChatCompletionChunk$Choice$Delta$Audio
                                                ChatCompletionChunk$Choice$Delta$Role
                                                ChatCompletionChunk$Choice$Delta$ToolCall
                                                ChatCompletionChunk$Choice$Delta$ToolCall$Function
@@ -2280,6 +2281,9 @@
                                  (.delta (-> (ChatCompletionChunk$Choice$Delta/builder)
                                              (.role ChatCompletionChunk$Choice$Delta$Role/ASSISTANT)
                                              (.content "Hel")
+                                             (.audio (-> (ChatCompletionChunk$Choice$Delta$Audio/builder)
+                                                         (.id "audio_1") (.data "base64")
+                                                         (.transcript "hello") (.expiresAt 42) (.build)))
                                              (.toolCalls [(-> (ChatCompletionChunk$Choice$Delta$ToolCall/builder)
                                                               (.index 0)
                                                               (.id "call_1")
@@ -2297,6 +2301,7 @@
                        :finish-reason :stop
                        :delta {:role :assistant
                                :content "Hel"
+                               :audio {:id "audio_1" :data "base64" :transcript "hello" :expires-at 42}
                                :tool-calls [{:index 0
                                              :id "call_1"
                                              :type :function
@@ -2322,6 +2327,26 @@
                     :completion-tokens 2
                     :total-tokens 3}}
            (chat-chunk->map chunk)))))
+
+(deftest builds-tool-search-output-new-tool-variants
+  (let [item (openai/response-input-item
+              {:type :tool-search-output :tools [{:type :mcp :server-label "docs"}
+                                                 {:type :code-interpreter :container "auto"}
+                                                 {:type :image-generation :model "gpt-image-1"}]})
+        tools (.tools (.asToolSearchOutput item))]
+    (is (.isMcp (first tools)))
+    (is (= "docs" (.serverLabel (.asMcp (first tools)))))
+    (is (.isCodeInterpreter (second tools)))
+    (is (= "auto" (.asString (.container (.asCodeInterpreter (second tools))))))
+    (is (.isImageGeneration (nth tools 2)))
+    (is (= "gpt-image-1" (.asString (impl/opt-get (.model (.asImageGeneration (nth tools 2)))))))))
+
+(deftest builds-tool-search-output-function-tool
+  (let [item (openai/response-input-item
+              {:type :tool-search-output :tools [{:type :function :name "get_weather"}]})
+        tool (first (.tools (.asToolSearchOutput item)))]
+    (is (= true (.isFunction tool)))
+    (is (= "get_weather" (.name (.asFunction tool))))))
 
 (deftest builds-stored-resource-params
   (let [model-p (model-delete-params "ft:model")

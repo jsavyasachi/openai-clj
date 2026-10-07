@@ -17,18 +17,18 @@ official Java SDK.
 deps.edn:
 
 ```clojure
-net.clojars.savya/openai-clj {:mvn/version "0.38.0"}
+net.clojars.savya/openai-clj {:mvn/version "0.39.0"}
 ```
 
 Leiningen:
 
 ```clojure
-[net.clojars.savya/openai-clj "0.38.0"]
+[net.clojars.savya/openai-clj "0.39.0"]
 ```
 
 Supported Clojure versions: 1.10, 1.11, and 1.12.
 
-Tracks [`com.openai/openai-java` 4.76.0](https://github.com/openai/openai-java/releases/tag/v4.76.0).
+Tracks [`com.openai/openai-java` 4.78.0](https://github.com/openai/openai-java/releases/tag/v4.78.0).
 
 ## Providers
 
@@ -268,6 +268,7 @@ turns against an agent, subagents spawned within a session, sandboxed
 (require '[openai.beta.agents :as agents]
          '[openai.beta.agents.sessions :as sessions]
          '[openai.beta.agents.sessions.turns :as turns]
+         '[openai.beta.agents.sessions.turns.items :as turn-items]
          '[openai.beta.agents.sessions.items :as items]
          '[openai.beta.agents.sessions.events :as events]
          '[openai.beta.agents.sessions.artifacts :as artifacts]
@@ -293,6 +294,7 @@ turns against an agent, subagents spawned within a session, sandboxed
 ;; Turns and items within a session
 (turns/list-turns client "sess_..." {:order :desc})
 (items/list-items client "sess_..." {:limit 20})
+(turn-items/list client "sess_..." "turn_..." {:limit 20})
 
 ;; Session-level events and artifacts
 (events/create client "sess_..." {...})
@@ -472,6 +474,10 @@ safety alert and safety case retrieval.
 through as strings, including `"gpt-6-astra"` and `"gpt-6.1-sol"`. The service exposes
 no operations in SDK 4.62.0.
 
+`openai.decisions/create` creates structured predicate, choice, and score
+decisions: `(decisions/create client {:model "gpt-5" :input "Review this"
+ :questions [{:type :predicate :instructions "Is it safe?"}]})`.
+
 List functions remain eager by default. Additive lazy siblings cover models,
 files, batches, stored Chat Completions, response input items, vector stores and
 their files/batches, and ChatKit threads/items. Their option maps accept
@@ -491,6 +497,8 @@ transport.
 The SDK's 4.75 agent helpers for turn-result collection and typed final output,
 artifact downloads, environment file preparation, and the function-tool helper
 are not wrapped either.
+Local agent tool handlers and `ChatCompletionAccumulator` audio state are SDK
+helper surface and are not wrapped.
 
 ## Running tests
 
