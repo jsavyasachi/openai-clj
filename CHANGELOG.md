@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.39.1] - 2026-10-08
+
+### Changed
+
+- Track `com.openai/openai-java` and `openai-java-bedrock` 4.78.1.
+
+### Removed
+
+- `openai.audio/create-voice` no longer accepts `{:type :prompt ...}`. The SDK
+  removed prompt-based custom voice creation in 4.78.1, so that form now throws
+  `:invalid-voice-variant`. Audio-sample creation is unchanged.
+
 ## [0.39.0] - 2026-10-06
 
 ### Changed

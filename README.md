@@ -17,18 +17,18 @@ official Java SDK.
 deps.edn:
 
 ```clojure
-net.clojars.savya/openai-clj {:mvn/version "0.39.0"}
+net.clojars.savya/openai-clj {:mvn/version "0.39.1"}
 ```
 
 Leiningen:
 
 ```clojure
-[net.clojars.savya/openai-clj "0.39.0"]
+[net.clojars.savya/openai-clj "0.39.1"]
 ```
 
 Supported Clojure versions: 1.10, 1.11, and 1.12.
 
-Tracks [`com.openai/openai-java` 4.78.0](https://github.com/openai/openai-java/releases/tag/v4.78.0).
+Tracks [`com.openai/openai-java` 4.78.1](https://github.com/openai/openai-java/releases/tag/v4.78.1).
 
 ## Providers
 
@@ -414,8 +414,6 @@ accept kebab-case request maps. Realtime WebSockets take a transport config map.
                              :input "Hello"})
 (audio/create-voice client {:type :audio-sample :audio-sample voice-sample
                             :consent "I consent" :name "Ada"})
-(audio/create-voice client {:type :prompt :name "Ada" :prompt "Warm and clear"
-                            :model "gpt-4o-mini-tts" :script-hint "Welcome"})
 (cpc/create client {:file "image.png"})
 (moderations/create client {:input "text"})
 (safety/retrieve client "safety_alert_...")
