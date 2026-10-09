@@ -4,7 +4,8 @@
             [openai.webhooks :as webhooks])
   (:import (com.openai.client OpenAIClient)
            (com.openai.core.http Headers)
-           (com.openai.models.webhooks AgentSessionActionRequiredWebhookEvent AgentSessionCreatedWebhookEvent
+           (com.openai.models.webhooks AgentEnvironmentFailedWebhookEvent AgentEnvironmentReadyWebhookEvent
+                                       AgentSessionActionRequiredWebhookEvent AgentSessionCreatedWebhookEvent
                                        RealtimeCallIncomingWebhookEvent SafetyDeactivationIssuedWebhookEvent SafetyWarningIssuedWebhookEvent
                                        UnwrapWebhookEvent WebhookCreateParams WebhookTestParams WebhookUpdateParams WebhookVerificationParams)
            (com.openai.services.blocking WebhookService)
@@ -87,6 +88,20 @@
            (mapv #(.asString %) (opt (.eventTypes ^WebhookUpdateParams update)))))
     (is (= "agent.session.created" (.asString (.eventType ^WebhookTestParams test))))))
 
+(deftest webhook-agent-environment-event-types
+  (let [event-types [:agent.environment.ready :agent.environment.failed]
+        create (#'webhooks/->create-params {:name "agent" :url "https://example.test"
+                                            :event-types event-types})
+        update (#'webhooks/->update-params "we_123" {:event-types event-types})
+        test-ready (#'webhooks/->test-params "we_123" {:event-type :agent.environment.ready})
+        test-failed (#'webhooks/->test-params "we_123" {:event-type :agent.environment.failed})]
+    (is (= ["agent.environment.ready" "agent.environment.failed"]
+           (mapv #(.asString %) (.eventTypes ^WebhookCreateParams create))))
+    (is (= ["agent.environment.ready" "agent.environment.failed"]
+           (mapv #(.asString %) (opt (.eventTypes ^WebhookUpdateParams update)))))
+    (is (= "agent.environment.ready" (.asString (.eventType ^WebhookTestParams test-ready))))
+    (is (= "agent.environment.failed" (.asString (.eventType ^WebhookTestParams test-failed))))))
+
 (deftest converts-agent-session-unwrapped-webhook-events
   (let [created (impl/sdk-input-object
                  {:id "evt_created" :created-at 1 :object "event" :type "agent.session.created"
@@ -103,6 +118,20 @@
             :data {:id "session_2" :required-action {:type "approve"}}}
            (select-keys (impl/sdk-object->clj (UnwrapWebhookEvent/ofAgentSessionActionRequired action-required))
                         [:type :data])))))
+
+(deftest webhook-unwrap-agent-environment-events
+  (let [ready (impl/sdk-input-object
+               {:id "evt_ready" :created-at 1 :object "event" :type "agent.environment.ready"
+                :data {:id "env_123"}}
+               AgentEnvironmentReadyWebhookEvent)
+        failed (impl/sdk-input-object
+                {:id "evt_failed" :created-at 2 :object "event" :type "agent.environment.failed"
+                 :data {:id "env_456"}}
+                AgentEnvironmentFailedWebhookEvent)]
+    (is (= "agent.environment.ready"
+           (:type (impl/sdk-object->clj (UnwrapWebhookEvent/ofAgentEnvironmentReady ready)))))
+    (is (= "agent.environment.failed"
+           (:type (impl/sdk-object->clj (UnwrapWebhookEvent/ofAgentEnvironmentFailed failed)))))))
 
 
 (defn- api [sym]

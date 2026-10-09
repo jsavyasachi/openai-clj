@@ -17,18 +17,18 @@ official Java SDK.
 deps.edn:
 
 ```clojure
-net.clojars.savya/openai-clj {:mvn/version "0.39.1"}
+net.clojars.savya/openai-clj {:mvn/version "0.40.0"}
 ```
 
 Leiningen:
 
 ```clojure
-[net.clojars.savya/openai-clj "0.39.1"]
+[net.clojars.savya/openai-clj "0.40.0"]
 ```
 
 Supported Clojure versions: 1.10, 1.11, and 1.12.
 
-Tracks [`com.openai/openai-java` 4.78.1](https://github.com/openai/openai-java/releases/tag/v4.78.1).
+Tracks [`com.openai/openai-java` 4.79.0](https://github.com/openai/openai-java/releases/tag/v4.79.0).
 
 ## Providers
 
@@ -311,7 +311,10 @@ turns against an agent, subagents spawned within a session, sandboxed
 (turn-items/item-list client "sess_..." "subagent_..." "turn_..." {})
 
 ;; Sandboxed environments, plus their files and templates
+(environments/create client {:environment {:environment-template-id "tmpl_..."}
+                             :vault-ids ["vault_..."]})
 (environments/retrieve client "env_...")
+(environments/list client {:order :desc :type :openai-hosted})
 (env-files/create client "env_..." {...})
 (env-templates/list client)
 

@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-10-09
+
+### Added
+
+- Add beta Agents environment creation and paginated listing, including hosted
+  environment configuration, vault IDs, and idempotency keys.
+- Support `agent.environment.ready` and `agent.environment.failed` webhook
+  event types and unwrapped payloads.
+
+### Changed
+
+- Track `com.openai/openai-java` and `openai-java-bedrock` 4.79.0.
+
 ## [0.39.1] - 2026-10-08
 
 ### Changed
