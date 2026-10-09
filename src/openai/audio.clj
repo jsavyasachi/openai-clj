@@ -9,8 +9,7 @@
                                            VoiceCreateParams
                                            VoiceCreateParams$Builder
                                            VoiceCreateParams$Body$AudioSample
-                                           VoiceCreateParams$Body$AudioSample$Type
-                                           VoiceCreateParams$Body$Prompt)
+                                           VoiceCreateParams$Body$AudioSample$Type)
            (com.openai.models.audio.speech SpeechCreateParams
                                            SpeechCreateParams$Builder
                                            SpeechCreateParams$ResponseFormat
@@ -207,36 +206,20 @@
                   {:openai/error :invalid-voice-variant :type type})))
 
 (defn- ->voice-params ^VoiceCreateParams
-  [{:keys [type audio-sample consent name prompt model script-hint]}]
+  [{:keys [type audio-sample consent name]}]
   (let [^VoiceCreateParams$Builder b (VoiceCreateParams/builder)]
-    (case type
-      :audio-sample
-      (do
-        (when-not audio-sample (impl/missing-key! :audio-sample))
-        (when-not consent (impl/missing-key! :consent))
-        (when-not name (impl/missing-key! :name))
-        (.body b
-               (let [body (VoiceCreateParams$Body$AudioSample/builder)]
-                 (.audioSample body (->input-stream audio-sample))
-                 (.consent body ^String consent)
-                 (.name body ^String name)
-                 (.type body (VoiceCreateParams$Body$AudioSample$Type/of "audio_sample"))
-                 (.build body))))
-
-      :prompt
-      (do
-        (when-not name (impl/missing-key! :name))
-        (when-not prompt (impl/missing-key! :prompt))
-        (.body b
-               (let [body (VoiceCreateParams$Body$Prompt/builder)]
-                 (.name body ^String name)
-                 (.prompt body ^String prompt)
-                 (.type body (com.openai.core.JsonValue/from "prompt"))
-                 (when model (.model body ^String model))
-                 (when script-hint (.scriptHint body ^String script-hint))
-                 (.build body))))
-
+    (when-not (or (nil? type) (= :audio-sample type))
       (invalid-voice-variant! type))
+    (when-not audio-sample (impl/missing-key! :audio-sample))
+    (when-not consent (impl/missing-key! :consent))
+    (when-not name (impl/missing-key! :name))
+    (.body b
+           (let [body (VoiceCreateParams$Body$AudioSample/builder)]
+             (.audioSample body (->input-stream audio-sample))
+             (.consent body ^String consent)
+             (.name body ^String name)
+             (.type body (VoiceCreateParams$Body$AudioSample$Type/of "audio_sample"))
+             (.build body)))
     (.build b)))
 
 (defn- voice->map [^Voice voice]
@@ -275,7 +258,9 @@
       (transcription-response->map (.create svc (->transcription-params req))))))
 
 (defn create-voice
-  "Create a custom voice and return a normalized response map."
+  "Create a custom voice from an audio sample and return a normalized response map.
+
+   As of SDK 4.78.1, only audio-sample voice creation is supported."
   [^OpenAIClient client req]
   (impl/with-api-errors
     (let [^AudioService audio (.audio client)

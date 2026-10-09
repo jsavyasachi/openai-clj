@@ -132,31 +132,34 @@
                                        (opt (.type body)))))
     (is (= [97 117 100 105 111] (vec (.readAllBytes (.audioSample body)))))))
 
-(deftest builds-voice-prompt-params
-  (let [p (voice-params {:type :prompt :name "Ada" :prompt "Warm and clear"
-                         :model "gpt-4o-mini-tts" :script-hint "Welcome"})
-        body (.asPrompt (.body p))]
+(deftest builds-voice-params-without-explicit-type
+  (let [p (voice-params {:audio-sample (.getBytes "audio" "UTF-8")
+                         :consent "I consent"
+                         :name "Ada"})
+        body (.asAudioSample (.body p))]
     (is (= "Ada" (.name body)))
-    (is (= "Warm and clear" (.prompt body)))
-    (is (= "gpt-4o-mini-tts" (.asString (opt (.model body)))))
-    (is (= "Welcome" (opt (.scriptHint body))))))
+    (is (= "I consent" (.consent body)))
+    (is (.isAudioSample (.body p)))))
 
 (deftest converts-voice-result
   (let [voice (-> (Voice/builder) (.id "voice_123") (.createdAt 42) (.name "Ada")
-                  (.object_ (JsonValue/from "voice")) (.type Voice$Type/PROMPT) (.build))]
-    (is (= {:id "voice_123" :created-at 42 :name "Ada" :object "voice" :type :prompt}
+                  (.object_ (JsonValue/from "voice")) (.type Voice$Type/AUDIO_SAMPLE) (.build))]
+    (is (= {:id "voice_123" :created-at 42 :name "Ada" :object "voice" :type :audio-sample}
            (#'audio/voice->map voice)))))
 
 (deftest rejects-missing-or-invalid-voice-variant
-  (doseq [req [{} {:type :unsupported}]]
+  (doseq [req [{:type :prompt} {:type :unsupported}]]
     (let [error (try (voice-params req) nil (catch clojure.lang.ExceptionInfo e e))]
       (is (= :invalid-voice-variant (:openai/error (ex-data error)))))))
 
 (deftest creates-voice-through-the-audio-service
   (let [voice (-> (Voice/builder) (.id "voice_123") (.createdAt 42) (.name "Ada")
-                  (.object_ (JsonValue/from "voice")) (.type Voice$Type/PROMPT) (.build))
+                  (.object_ (JsonValue/from "voice")) (.type Voice$Type/AUDIO_SAMPLE) (.build))
         service (proxy [VoiceService] [] (create [_] voice))
         audio-service (proxy [AudioService] [] (voices [] service))
         client (proxy [OpenAIClient] [] (audio [] audio-service))]
-    (is (= {:id "voice_123" :created-at 42 :name "Ada" :object "voice" :type :prompt}
-           (audio/create-voice client {:type :prompt :name "Ada" :prompt "Warm and clear"})))))
+    (is (= {:id "voice_123" :created-at 42 :name "Ada" :object "voice" :type :audio-sample}
+           (audio/create-voice client {:type :audio-sample
+                                       :audio-sample (.getBytes "audio" "UTF-8")
+                                       :consent "I consent"
+                                       :name "Ada"})))))
