@@ -3,7 +3,8 @@
             [openai.beta.agents.sessions :as sessions]
             [openai.core :as openai]
             [openai.wire-level-test :as wire])
-  (:import (com.sun.net.httpserver HttpExchange)))
+  (:import (com.openai.models.beta.agents EnvironmentParam)
+           (com.sun.net.httpserver HttpExchange)))
 
 (set! *warn-on-reflection* true)
 
@@ -20,6 +21,15 @@
            [{:environment {:id "env_123"}} :agent-id-or-agent]]]
     (is (= {:openai/error :missing-key :key key}
            (error-data #(#'sessions/->session-create-params request))))))
+
+(deftest session-create-accepts-prewarmed-environment-id
+  (let [params (#'sessions/->session-create-params
+                {:environment {:type :openai-hosted :environment-id "env_123"}
+                 :agent-id "agent_123"})
+        environment (.environment params)]
+    (is (instance? EnvironmentParam environment))
+    (is (= "env_123"
+           (.get (.environmentId (.asOpenAIHosted environment)))))))
 
 (deftest validates-session-retrieve-requires-id
   (is (= {:openai/error :missing-key :key :session-id}
