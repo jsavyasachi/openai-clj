@@ -2,6 +2,7 @@
   (:require [clojure.test :refer [deftest is]]
             [openai.beta.agents.sessions :as sessions]
             [openai.core :as openai]
+            [openai.impl :as impl]
             [openai.wire-level-test :as wire])
   (:import (com.openai.models.beta.agents EnvironmentParam)
            (com.sun.net.httpserver HttpExchange)))
@@ -30,6 +31,28 @@
     (is (instance? EnvironmentParam environment))
     (is (= "env_123"
            (.get (.environmentId (.asOpenAIHosted environment)))))))
+
+(deftest session-create-spend-control-reaches-params
+  (let [params (#'sessions/->session-create-params
+                {:environment {:type :openai-hosted :environment-id "env_123"}
+                 :agent-id "agent_123"
+                 :spend-control {:limit 42}})]
+    (is (= 42 (.get (.limit (.get (.spendControl params))))))))
+
+(deftest session-update-spend-control-reaches-params
+  (let [params (#'sessions/->session-update-params "sess_123"
+                                                    {:spend-control {:limit 24}})]
+    (is (= 24 (.get (.limit (.get (.spendControl params))))))))
+
+(deftest session-spend-control-converts
+  (let [session (impl/sdk-input-object
+                 {:id "sess_123" :created-at 1 :last-active-at 2
+                  :environment {:id "env_123" :status "ready" :type "openai_hosted"}
+                  :metadata {} :object "agent_session" :status "idle"
+                  :spend-control {:limit 42 :consumed 7}}
+                 com.openai.models.beta.agents.AgentSession)]
+    (is (= {:limit 42 :consumed 7}
+           (:spend-control (#'sessions/sdk-object->map session))))))
 
 (deftest validates-session-retrieve-requires-id
   (is (= {:openai/error :missing-key :key :session-id}

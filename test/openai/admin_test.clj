@@ -5,7 +5,7 @@
             [openai.impl :as impl])
   (:import (com.openai.models.admin.organization.adminapikeys AdminApiKeyCreateParams)
            (com.openai.models.admin.organization.auditlogs AuditLogListParams AuditLogListParams$EventType AuditLogListResponse AuditLogListResponse$Builder AuditLogListResponse$ExternalStorageRegistered AuditLogListResponse$Type)
-           (com.openai.models.admin.organization.externalstorage ExternalStorageConfiguration ExternalStorageConfiguration$Status ExternalStorageCreateParams ExternalStorageDeleteParams ExternalStorageListParams ExternalStorageListParams$Order ExternalStorageRetrieveParams ExternalStorageValidateParams GcpExternalStorageProvider)
+           (com.openai.models.admin.organization.externalstorage ExternalStorageConfiguration ExternalStorageConfiguration$Provider$Oci ExternalStorageConfiguration$Status ExternalStorageCreateParams ExternalStorageDeleteParams ExternalStorageListParams ExternalStorageListParams$Order ExternalStorageRetrieveParams ExternalStorageValidateParams GcpExternalStorageProvider)
            (com.openai.models.admin.organization.groups Group Group$Builder GroupCreateParams)
            (com.openai.models.admin.organization.groups.users UserCreateParams)
            (com.openai.models.admin.organization.invites Invite Invite$Builder Invite$Role Invite$Status)
@@ -450,6 +450,32 @@
             :workload-identity-provider-id "provider_1"}
            (:provider (#'admin/external-storage->map configuration))))))
 
+(deftest external-storage-oci-provider-builds-and-converts
+  (let [^ExternalStorageCreateParams params
+        (#'admin/->external-storage-create-params
+         {:project-id "proj_1"
+          :provider {:type :oci :bucket "exports" :region "us-ashburn-1"
+                     :tenancy-ocid "ocid1.tenancy.oc1..example"}})
+        create-provider (.asOci (.provider params))
+        configuration-provider (-> (ExternalStorageConfiguration$Provider$Oci/builder)
+                                   (.bucket "exports") (.region "us-ashburn-1")
+                                   (.tenancyOcid "ocid1.tenancy.oc1..example")
+                                   (.type (com.openai.core.JsonValue/from "oci"))
+                                   (.build))
+        configuration (-> (ExternalStorageConfiguration/builder)
+                          (.id "storage_1") (.createdAt 123) (.geography "us")
+                          (.object_ (com.openai.core.JsonValue/from "external_storage"))
+                          (.projectId "proj_1") (.provider configuration-provider)
+                          (.status (ExternalStorageConfiguration$Status/of "active"))
+                          (.build))]
+    (is (.isOci (.provider params)))
+    (is (= "exports" (.bucket create-provider)))
+    (is (= "us-ashburn-1" (.region create-provider)))
+    (is (= "ocid1.tenancy.oc1..example" (.tenancyOcid create-provider)))
+    (is (= {:type :oci :bucket "exports" :region "us-ashburn-1"
+            :tenancy-ocid "ocid1.tenancy.oc1..example"}
+           (:provider (#'admin/external-storage->map configuration))))))
+
 (deftest converts-external-storage-registered-audit-log-provider-handler
   (let [^AuditLogListResponse$ExternalStorageRegistered registered
         (impl/sdk-input-object
@@ -507,5 +533,24 @@
             :workload-identity-pool-id "pool_1"
             :workload-identity-project-number "123456789"
             :workload-identity-provider-id "provider_1"}
+           (get-in (#'admin/audit-log->map event)
+                   [:external-storage-registered :data :provider])))))
+
+(deftest audit-log-external-storage-oci-provider-converts
+  (let [provider (-> (com.openai.models.admin.organization.auditlogs.AuditLogListResponse$ExternalStorageRegistered$Data$Provider$Oci/builder)
+                     (.bucket "exports") (.region "us-ashburn-1")
+                     (.tenancyOcid "ocid1.tenancy.oc1..example")
+                     (.type (com.openai.core.JsonValue/from "oci"))
+                     (.build))
+        data (-> (com.openai.models.admin.organization.auditlogs.AuditLogListResponse$ExternalStorageRegistered$Data/builder)
+                 (.geography "us") (.provider provider) (.build))
+        registered (-> (AuditLogListResponse$ExternalStorageRegistered/builder)
+                       (.id "storage_1") (.data data) (.build))
+        event (-> (AuditLogListResponse/builder)
+                  (.id "log_1") (.effectiveAt 123)
+                  (.type (AuditLogListResponse$Type/of "external_storage_registered"))
+                  (.externalStorageRegistered registered) (.build))]
+    (is (= {:type :oci :bucket "exports" :region "us-ashburn-1"
+            :tenancy-ocid "ocid1.tenancy.oc1..example"}
            (get-in (#'admin/audit-log->map event)
                    [:external-storage-registered :data :provider])))))

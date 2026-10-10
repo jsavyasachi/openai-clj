@@ -17,18 +17,18 @@ official Java SDK.
 deps.edn:
 
 ```clojure
-net.clojars.savya/openai-clj {:mvn/version "0.40.0"}
+net.clojars.savya/openai-clj {:mvn/version "0.41.0"}
 ```
 
 Leiningen:
 
 ```clojure
-[net.clojars.savya/openai-clj "0.40.0"]
+[net.clojars.savya/openai-clj "0.41.0"]
 ```
 
 Supported Clojure versions: 1.10, 1.11, and 1.12.
 
-Tracks [`com.openai/openai-java` 4.79.0](https://github.com/openai/openai-java/releases/tag/v4.79.0).
+Tracks [`com.openai/openai-java` 4.80.0](https://github.com/openai/openai-java/releases/tag/v4.80.0).
 
 ## Providers
 
@@ -288,7 +288,8 @@ turns against an agent, subagents spawned within a session, sandboxed
 (agents/list client)
 
 ;; Sessions: create (optionally streaming), retrieve, update, delete, list
-(sessions/session-create client {:agent-id "agent_..."})
+(sessions/session-create client {:agent-id "agent_..."
+                                 :spend-control {:limit 10000}})
 (sessions/session-create-streaming client {:agent-id "agent_..."})
 
 ;; Turns and items within a session
@@ -320,6 +321,7 @@ turns against an agent, subagents spawned within a session, sandboxed
 
 ;; Vaults and the credentials stored in them
 (vaults/create-vault client {:name "prod-creds"})
+(vaults/update-vault client "vault_..." {:name "production-creds"})
 (credentials/create-credential client "vault_..." {:name "github"
                                                      :auth {:type :static-bearer
                                                             :token "..."}})
@@ -450,6 +452,11 @@ accept kebab-case request maps. Realtime WebSockets take a transport config map.
 (webhooks/list-event-types client)
 (admin/project-list admin-client {:limit 20})
 (admin/external-storage-list admin-client {:project-id "proj_..."})
+(admin/external-storage-create admin-client
+                               {:project-id "proj_..."
+                                :provider {:type :oci :bucket "exports"
+                                           :region "us-ashburn-1"
+                                           :tenancy-ocid "ocid1.tenancy.oc1..example"}})
 (admin-projects/service-account-list admin-client "proj_...")
 ```
 

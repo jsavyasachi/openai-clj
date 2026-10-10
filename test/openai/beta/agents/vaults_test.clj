@@ -1,5 +1,6 @@
 (ns openai.beta.agents.vaults-test
   (:require [clojure.test :refer [deftest is testing]]
+            [openai.beta.agents.vaults :as vaults]
             [jsonista.core :as json])
   (:import (com.openai.client OpenAIClient)
            (com.openai.core JsonValue)
@@ -96,6 +97,43 @@
         (is (= {:openai/error :missing-key :key :vault-id}
                (error-data #(retrieve-vault (client-for service) nil)))))
       (is false "openai.beta.agents.vaults/retrieve-vault is not implemented"))))
+
+(deftest update-vault-builds-params
+  (let [update-vault (wrapper-var 'openai.beta.agents.vaults/update-vault)
+        captured (atom nil)
+        service (proxy [VaultService] []
+                  (update [p] (reset! captured p) (response-vault "vault_1" "Renamed")))]
+    (is update-vault "openai.beta.agents.vaults/update-vault is not implemented")
+    (when update-vault
+      (update-vault (client-for service) "vault_1"
+                    {:name "Renamed" :metadata {:team "platform"}})
+      (let [params @captured]
+        (is (= "vault_1" (.get (.vaultId params))))
+        (is (= "Renamed" (.get (.name params))))
+        (is (= {:team "platform"}
+               (json-value->clj (.get (.metadata params)))))))))
+
+(deftest update-vault-requires-vault-id
+  (let [update-vault (wrapper-var 'openai.beta.agents.vaults/update-vault)]
+    (is update-vault "openai.beta.agents.vaults/update-vault is not implemented")
+    (when update-vault
+      (is (= {:openai/error :missing-key :key :vault-id}
+             (error-data #(update-vault (client-for (proxy [VaultService] [])) nil {})))))))
+
+(deftest update-vault-round-trips
+  (let [update-vault (wrapper-var 'openai.beta.agents.vaults/update-vault)
+        service (proxy [VaultService] []
+                  (update [_] (response-vault "vault_1" "Renamed")))]
+    (is update-vault "openai.beta.agents.vaults/update-vault is not implemented")
+    (when update-vault
+      (is (= "Renamed"
+             (:name (update-vault (client-for service) "vault_1" {:name "Renamed"})))))))
+
+(deftest list-vaults-metadata-filter-reaches-params
+  (let [params (#'vaults/->vault-list-params
+                {:metadata {:team "platform"}})]
+    (is (= ["platform"]
+           (.values (._additionalProperties (.get (.metadata params))) "team")))))
 
 (deftest lists-vaults
   (let [list-vaults (wrapper-var 'openai.beta.agents.vaults/list-vaults)]

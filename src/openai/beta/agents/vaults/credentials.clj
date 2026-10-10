@@ -20,6 +20,8 @@
                                                                 CredentialListPage
                                                                 CredentialListParams
                                                                 CredentialListParams$Builder
+                                                                CredentialListParams$Metadata
+                                                                CredentialListParams$Metadata$Builder
                                                                 CredentialListParams$Order
                                                                 CredentialRetrieveParams
                                                                 CredentialUpdateParams
@@ -48,6 +50,13 @@
 
 (defn- ->credential-update-metadata ^CredentialUpdateParams$Metadata [metadata]
   (impl/sdk-input-object metadata CredentialUpdateParams$Metadata))
+
+(defn- ->credential-list-metadata ^CredentialListParams$Metadata [metadata]
+  (let [^CredentialListParams$Metadata$Builder b
+        (CredentialListParams$Metadata/builder)]
+    (doseq [[k v] metadata]
+      (.putAdditionalProperty b (name k) (str v)))
+    (.build b)))
 
 (defn- ->credential-create-params ^CredentialCreateParams
   [^String vault-id {:keys [name auth metadata]}]
@@ -83,12 +92,15 @@
     (.build b)))
 
 (defn- ->credential-list-params ^CredentialListParams
-  [^String vault-id {:keys [after limit order]}]
+  [^String vault-id {:keys [after limit metadata order]}]
   (when-not vault-id (impl/missing-key! :vault-id))
   (let [^CredentialListParams$Builder b (CredentialListParams/builder)]
     (.vaultId b vault-id)
     (when after (.after b ^String after))
     (when limit (.limit b (long limit)))
+    (when metadata
+      (.metadata b ^CredentialListParams$Metadata
+                 (->credential-list-metadata metadata)))
     (when order (.order b (CredentialListParams$Order/of (impl/enum-name order))))
     (.build b)))
 

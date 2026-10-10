@@ -1,5 +1,6 @@
 (ns openai.beta.agents.vaults.credentials-test
   (:require [clojure.test :refer [deftest is testing]]
+            [openai.beta.agents.vaults.credentials :as credentials]
             [openai.impl :as impl])
   (:import (com.openai.client OpenAIClient)
            (com.openai.core JsonValue)
@@ -72,6 +73,12 @@
                (agents [] agents))]
     (proxy [OpenAIClient] []
       (beta [] beta))))
+
+(deftest list-credentials-metadata-filter-reaches-params
+  (let [params (#'credentials/->credential-list-params
+                "vault_1" {:metadata {:team "platform"}})]
+    (is (= ["platform"]
+           (.values (._additionalProperties (.get (.metadata params))) "team")))))
 
 (deftest creates-credential
   (let [create-credential

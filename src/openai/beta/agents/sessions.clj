@@ -15,13 +15,17 @@
                                                     SessionCreateParams$Agent$ServiceTier
                                                     SessionCreateParams$Input
                                                     SessionCreateParams$Metadata
+                                                    SessionCreateParams$SpendControl
+                                                    SessionCreateParams$SpendControl$Builder
                                                     SessionDeleteParams
                                                     SessionListPage
                                                     SessionListParams
                                                     SessionListParams$Order
                                                     SessionRetrieveParams
                                                     SessionUpdateParams
-                                                    SessionUpdateParams$Metadata)
+                                                    SessionUpdateParams$Metadata
+                                                    SessionUpdateParams$SpendControl
+                                                    SessionUpdateParams$SpendControl$Builder)
            (com.openai.services.blocking BetaService)
            (com.openai.services.blocking.beta AgentService)
            (com.openai.services.blocking.beta.agents SessionService)))
@@ -97,8 +101,20 @@
 (defn- ->update-metadata ^SessionUpdateParams$Metadata [metadata]
   (sdk-value metadata SessionUpdateParams$Metadata))
 
+(defn- ->create-spend-control ^SessionCreateParams$SpendControl [{:keys [limit]}]
+  (let [^SessionCreateParams$SpendControl$Builder b
+        (SessionCreateParams$SpendControl/builder)]
+    (when (some? limit) (.limit b (long limit)))
+    (.build b)))
+
+(defn- ->update-spend-control ^SessionUpdateParams$SpendControl [{:keys [limit]}]
+  (let [^SessionUpdateParams$SpendControl$Builder b
+        (SessionUpdateParams$SpendControl/builder)]
+    (when (some? limit) (.limit b (long limit)))
+    (.build b)))
+
 (defn- ->session-create-params ^SessionCreateParams
-  [{:keys [environment agent agent-id input metadata vault-ids] :as req}]
+  [{:keys [environment agent agent-id input metadata spend-control vault-ids] :as req}]
   (when-not environment (impl/missing-key! :environment))
   (when-not (or agent-id agent) (impl/missing-key! :agent-id-or-agent))
   (let [b (SessionCreateParams/builder)]
@@ -107,9 +123,10 @@
     (when agent-id (.agentId b ^String agent-id))
     (when input (.input b (->input input)))
     (when metadata (.metadata b (->create-metadata metadata)))
+    (when spend-control (.spendControl b (->create-spend-control spend-control)))
     (when vault-ids (.vaultIds b ^java.util.List (vec vault-ids)))
     (doseq [[k v] (dissoc req :environment :agent :agent-id :input
-                          :metadata :vault-ids)]
+                          :metadata :spend-control :vault-ids)]
       (.putAdditionalBodyProperty b (wire-name k) (json-value v)))
     (.build b)))
 
@@ -120,12 +137,13 @@
       (.build)))
 
 (defn- ->session-update-params ^SessionUpdateParams
-  [session-id {:keys [metadata] :as req}]
+  [session-id {:keys [metadata spend-control] :as req}]
   (when-not session-id (impl/missing-key! :session-id))
   (let [b (SessionUpdateParams/builder)]
     (.sessionId b ^String session-id)
     (when metadata (.metadata b (->update-metadata metadata)))
-    (doseq [[k v] (dissoc req :metadata)]
+    (when spend-control (.spendControl b (->update-spend-control spend-control)))
+    (doseq [[k v] (dissoc req :metadata :spend-control)]
       (.putAdditionalBodyProperty b (wire-name k) (json-value v)))
     (.build b)))
 
