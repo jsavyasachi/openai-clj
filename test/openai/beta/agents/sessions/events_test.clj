@@ -5,7 +5,12 @@
            (com.openai.core.http StreamResponse)
            (com.openai.models.beta.agents AgentFunctionCallOutputParam
                                            AgentSessionEvent
+                                           AgentSessionEnvironmentExpiredEvent
                                            AgentSessionEnvironmentResetEvent
+                                           AgentSessionEnvironmentState$Error
+                                           AgentSessionEnvironmentState
+                                           AgentSessionEnvironmentState$Status
+                                           AgentSessionEnvironmentSuspendedEvent
                                            AgentSessionInputParam
                                            AgentSessionInputParam$AgentSessionInputToolResult
                                            AgentSessionTurnOutputTextDeltaEvent)
@@ -165,3 +170,28 @@
                  :type :agent.session.environment.reset}]
                @received)))
       (is false "openai.beta.agents.sessions.events/stream is not implemented"))))
+
+(deftest session-environment-expired-and-suspended-events-convert
+  (let [environment (-> (AgentSessionEnvironmentState/builder)
+                        (.id "env_1")
+                        (.error (-> (AgentSessionEnvironmentState$Error/builder)
+                                    (.code "none") (.message "none") (.type "none")
+                                    (.build)))
+                        (.status (AgentSessionEnvironmentState$Status/of "ready"))
+                        (.type "openai_hosted")
+                        (.build))
+        expired (AgentSessionEvent/ofEnvironmentExpired
+                 (-> (AgentSessionEnvironmentExpiredEvent/builder)
+                     (.environment environment) (.eventId "event_expired")
+                     (.sessionId "sess_expired") (.turnId "turn_1")
+                     (.build)))
+        suspended (AgentSessionEvent/ofEnvironmentSuspended
+                   (-> (AgentSessionEnvironmentSuspendedEvent/builder)
+                       (.environment environment) (.eventId "event_suspended")
+                       (.sessionId "sess_suspended") (.turnId "turn_2")
+                       (.build)))
+        event->map (implementation-var 'openai.beta.agents.sessions.events/event->map)]
+    (is (= :agent.session.environment.expired (:type (event->map expired))))
+    (is (= "sess_expired" (:session-id (event->map expired))))
+    (is (= :agent.session.environment.suspended (:type (event->map suspended))))
+    (is (= "sess_suspended" (:session-id (event->map suspended))))))

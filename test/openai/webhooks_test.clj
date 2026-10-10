@@ -4,7 +4,7 @@
             [openai.webhooks :as webhooks])
   (:import (com.openai.client OpenAIClient)
            (com.openai.core.http Headers)
-           (com.openai.models.webhooks AgentEnvironmentFailedWebhookEvent AgentEnvironmentReadyWebhookEvent
+           (com.openai.models.webhooks AgentEnvironmentExpiredWebhookEvent AgentEnvironmentFailedWebhookEvent AgentEnvironmentReadyWebhookEvent AgentEnvironmentSuspendedWebhookEvent
                                        AgentSessionActionRequiredWebhookEvent AgentSessionCreatedWebhookEvent
                                        RealtimeCallIncomingWebhookEvent SafetyDeactivationIssuedWebhookEvent SafetyWarningIssuedWebhookEvent
                                        UnwrapWebhookEvent WebhookCreateParams WebhookTestParams WebhookUpdateParams WebhookVerificationParams)
@@ -102,6 +102,22 @@
     (is (= "agent.environment.ready" (.asString (.eventType ^WebhookTestParams test-ready))))
     (is (= "agent.environment.failed" (.asString (.eventType ^WebhookTestParams test-failed))))))
 
+(deftest webhook-agent-environment-expired-suspended-event-types
+  (let [event-types [:agent.environment.expired :agent.environment.suspended]
+        create (#'webhooks/->create-params {:name "agent" :url "https://example.test"
+                                            :event-types event-types})
+        update (#'webhooks/->update-params "we_123" {:event-types event-types})
+        expired (#'webhooks/->test-params "we_123" {:event-type :agent.environment.expired})
+        suspended (#'webhooks/->test-params "we_123" {:event-type :agent.environment.suspended})]
+    (is (= ["agent.environment.expired" "agent.environment.suspended"]
+           (mapv #(.asString %) (.eventTypes ^WebhookCreateParams create))))
+    (is (= ["agent.environment.expired" "agent.environment.suspended"]
+           (mapv #(.asString %) (opt (.eventTypes ^WebhookUpdateParams update)))))
+    (is (= "agent.environment.expired"
+           (.asString (.eventType ^WebhookTestParams expired))))
+    (is (= "agent.environment.suspended"
+           (.asString (.eventType ^WebhookTestParams suspended))))))
+
 (deftest converts-agent-session-unwrapped-webhook-events
   (let [created (impl/sdk-input-object
                  {:id "evt_created" :created-at 1 :object "event" :type "agent.session.created"
@@ -132,6 +148,22 @@
            (:type (impl/sdk-object->clj (UnwrapWebhookEvent/ofAgentEnvironmentReady ready)))))
     (is (= "agent.environment.failed"
            (:type (impl/sdk-object->clj (UnwrapWebhookEvent/ofAgentEnvironmentFailed failed)))))))
+
+(deftest webhook-unwrap-agent-environment-expired-suspended-events
+  (let [expired (impl/sdk-input-object
+                 {:id "evt_expired" :created-at 1 :object "event"
+                  :type "agent.environment.expired" :data {:id "env_123"}}
+                 AgentEnvironmentExpiredWebhookEvent)
+        suspended (impl/sdk-input-object
+                   {:id "evt_suspended" :created-at 2 :object "event"
+                    :type "agent.environment.suspended" :data {:id "env_456"}}
+                   AgentEnvironmentSuspendedWebhookEvent)]
+    (is (= "agent.environment.expired"
+           (:type (impl/sdk-object->clj
+                   (UnwrapWebhookEvent/ofAgentEnvironmentExpired expired)))))
+    (is (= "agent.environment.suspended"
+           (:type (impl/sdk-object->clj
+                   (UnwrapWebhookEvent/ofAgentEnvironmentSuspended suspended)))))))
 
 
 (defn- api [sym]

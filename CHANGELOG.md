@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-10-09
+
+### Added
+
+- Add beta Agent vault updates and metadata filters for vault and credential
+  listings.
+- Support Agent session spend controls and environment expired/suspended
+  stream and webhook events.
+- Support OCI external storage providers in create parameters, configuration
+  maps, and `external-storage-registered` audit-log output.
+
+### Changed
+
+- Track `com.openai/openai-java` and `openai-java-bedrock` 4.80.0.
+
 ## [0.40.0] - 2026-10-09
 
 ### Added
